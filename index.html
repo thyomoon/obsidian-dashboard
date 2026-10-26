@@ -52,10 +52,14 @@
   </form>
 
   <main class="grid">
-    <section class="card" id="todos" data-tab="home" aria-labelledby="todos-h"></section>
-    <section class="card" id="events" data-tab="home" aria-labelledby="events-h"></section>
-    <section class="card" id="logs" data-tab="log" aria-labelledby="logs-h"></section>
-    <section class="card" id="calendar" data-tab="cal" aria-labelledby="cal-h"></section>
+    <div class="col">
+      <section class="card" id="todos" data-tab="home" aria-labelledby="todos-h"></section>
+      <section class="card" id="logs" data-tab="log" aria-labelledby="logs-h"></section>
+    </div>
+    <div class="col side">
+      <section class="card" id="events" data-tab="home" aria-labelledby="events-h"></section>
+      <section class="card" id="calendar" data-tab="cal" aria-labelledby="cal-h"></section>
+    </div>
   </main>
 
   <nav class="tabbar" aria-label="화면 전환">

@@ -25,12 +25,13 @@ cat > "$TMP/js/clicks.js" <<'JS'
   if (!q) return;
   const steps = q.split('|');
   let i = 0;
-  // 단계: "선택자" → 누르기, "선택자=>글" → 글 넣기, "submit:선택자" → 제출, "dump" → 새로 만든 로그 파일 내용을 화면 아래에 보이기
+  // 단계: "선택자" → 누르기, "선택자=>글" → 글 넣기, "submit:선택자" → 제출, "dump[:YYYY-MM-DD]" → 그날(기본 오늘) 로그 파일 내용만 화면에 보이기
   (function next() {
     if (i >= steps.length) return;
     const st = steps[i++];
-    if (st === 'dump') {
-      const f = Object.values(G._files).filter((x) => x.name.startsWith(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date())));
+    if (st.startsWith('dump')) {
+      const day = st.slice(5) || new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles' }).format(new Date());
+      const f = Object.values(G._files).filter((x) => x.name.startsWith(day));
       const pre = document.createElement('pre'); pre.id = 'dump'; pre.style.cssText = 'white-space:pre-wrap;font-size:12px;background:#fff;padding:12px;margin:16px';
       pre.textContent = f.length ? f[0].text : '(오늘 파일 없음)'; document.body.innerHTML = ''; document.body.appendChild(pre);
     } else if (st.startsWith('submit:')) document.querySelector(st.slice(7)).requestSubmit();

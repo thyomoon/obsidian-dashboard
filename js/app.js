@@ -8,7 +8,9 @@
   const ICON = {
     out: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg>',
     left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>',
-    right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>'
+    right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
+    edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+    trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>'
   };
 
   const S = {
@@ -18,7 +20,7 @@
     showDone: false, kind: 'todo', tab: 'home',
     openDate: null, selDate: null, month: null,
     todayEvents: null, monthEvents: null, eventsError: false,
-    busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0
+    busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editIdea: null
   };
 
   // ---------- 날짜 (샌프란시스코 현지 시각) ----------
@@ -185,6 +187,42 @@
     finally { S.busy.delete(key); renderAll(); }
   }
 
+  function ideaRef(key) {
+    const i = key.lastIndexOf(':');
+    const id = key.slice(0, i);
+    const line = Number(key.slice(i + 1));
+    const p = S.files[id] && S.files[id].parsed;
+    const sec = p && p.sections.find((x) => x.name === '새로운 아이디어');
+    const it = sec && sec.items.find((x) => x.line === line);
+    return it ? { id, it } : null;
+  }
+
+  // newText가 null이면 지운다.
+  async function changeIdea(key, newText) {
+    const r = ideaRef(key);
+    S.editIdea = null;
+    if (!r) { renderLogs(); return; }
+    S.busy.add(key); renderLogs();
+    try {
+      await mutate(r.id, (t) => MD.editBullet(t, r.it, newText));
+      toast(newText == null ? '아이디어를 지웠어요.' : '아이디어를 고쳤어요.');
+    } catch (e) { fail(e); }
+    finally { S.busy.delete(key); renderAll(); }
+  }
+
+  async function addIdea(date, value) {
+    const v = value.replace(/\s+/g, ' ').trim();
+    if (!v) return;
+    try {
+      const id = date === S.today ? await ensureToday() : (logByDate(date) || {}).id;
+      if (!id) return;
+      await mutate(id, (t) => MD.appendToSection(t, '새로운 아이디어', '- ' + v, ['만들거나 바꾼 파일', '오늘의 일기']));
+      renderAll();
+      const inp = document.getElementById('idea-add-' + date);
+      if (inp) inp.focus();
+    } catch (e) { fail(e); }
+  }
+
   async function quickAdd(value) {
     const v = value.replace(/\s+/g, ' ').trim();
     if (!v) return false;
@@ -331,7 +369,12 @@
     let secs = p ? p.sections.slice() : [];
     if (isToday && !p) secs = ['내 한 줄', '남은 일', '새로운 아이디어', '오늘의 일기'].map((name) => ({ name, text: '', isList: false, items: [] }));
     if (isToday) EDITABLE.forEach((n) => { if (!secs.some((s) => s.name === n)) secs.push({ name: n, text: '', isList: false, items: [] }); });
-    const body = secs.map((s) => secHtml(s, l, isToday)).filter(Boolean).join('');
+    // 아이디어 칸이 없는 옛 로그에도 칸을 보여서 더할 수 있게 한다(첫 아이디어를 넣을 때 파일에 칸이 생긴다).
+    if (p && !secs.some((s) => s.name === '새로운 아이디어')) {
+      const at = secs.findIndex((s) => s.name === '만들거나 바꾼 파일' || s.name === '오늘의 일기');
+      secs.splice(at < 0 ? secs.length : at, 0, { name: '새로운 아이디어', text: '', isList: false, items: [] });
+    }
+    const body = secs.map((s) => secHtml(s, l, isToday, date)).filter(Boolean).join('');
     return '<div class="detail">' +
       '<div class="detail-top"><button type="button" class="btn" data-back>' + ICON.left + '최근 7일</button>' +
       '<div class="meta">' + (isToday ? '<span id="save-label">' + h(S.saveLabel || (l ? '' : '아직 파일 없음')) + '</span>' : '') +
@@ -343,8 +386,9 @@
   }
 
   const KEEP_EMPTY = ['남은 일', '새로운 아이디어'];
-  function secHtml(s, l, isToday) {
+  function secHtml(s, l, isToday, date) {
     const head = '<h3>' + h(s.name) + '</h3>';
+    if (s.name === '새로운 아이디어' && (l || isToday)) return ideaSecHtml(s, l, date);
     if (isToday && EDITABLE.includes(s.name)) {
       const v = s.name in S.drafts ? S.drafts[s.name] : s.text;
       if (!(s.name in S.base)) S.base[s.name] = s.text;
@@ -360,17 +404,41 @@
       return '<div class="sec">' + head + '<div class="hint">' + hint + '</div></div>';
     }
     if (!s.isList) return '<div class="sec">' + head + '<p>' + show(s.text) + '</p></div>';
-    const isIdea = s.name === '새로운 아이디어';
     const items = s.items.map((it) => {
       const pad = ' style="padding-left:' + it.depth * 20 + 'px"';
-      if (it.kind === 'task') {
-        const busy = S.busy.has(l.id + ':' + it.line);
-        return '<label class="tk' + (it.done ? ' done' : '') + '"' + pad + '><input type="checkbox" data-toggle="' + h(l.id) + '" data-line="' + it.line + '"' + (it.done ? ' checked' : '') + (busy ? ' disabled' : '') + '><span>' + show(it.text) + '</span></label>';
-      }
-      if (isIdea && !it.depth) return '<div class="idea-item">' + show(it.text) + '</div>';
+      if (it.kind === 'task') return taskHtml(it, l);
       return '<div class="li"' + pad + '><span class="b">·</span><span>' + show(it.text) + '</span></div>';
     }).join('');
     return '<div class="sec">' + head + '<div>' + items + '</div></div>';
+  }
+
+  function taskHtml(it, l) {
+    const pad = ' style="padding-left:' + it.depth * 20 + 'px"';
+    const busy = S.busy.has(l.id + ':' + it.line);
+    return '<label class="tk' + (it.done ? ' done' : '') + '"' + pad + '><input type="checkbox" data-toggle="' + h(l.id) + '" data-line="' + it.line + '"' + (it.done ? ' checked' : '') + (busy ? ' disabled' : '') + '><span>' + show(it.text) + '</span></label>';
+  }
+
+  // 새로운 아이디어: 어느 날짜든 고치기 · 지우기 · 더하기.
+  function ideaSecHtml(s, l, date) {
+    const rows = (s.isList ? s.items : []).map((it) => {
+      if (it.kind === 'task') return taskHtml(it, l);
+      const key = l.id + ':' + it.line;
+      const pad = it.depth ? ' style="margin-left:' + it.depth * 20 + 'px"' : '';
+      if (S.editIdea === key) {
+        return '<form class="idea-edit" data-idea-save="' + h(key) + '"' + pad + '><label for="idea-edit-input" class="sr-only">아이디어 고치기</label>' +
+          '<input class="field" id="idea-edit-input" type="text" value="' + h(it.text) + '" data-idea-input enterkeyhint="done">' +
+          '<button class="btn primary" type="submit">저장</button><button class="btn" type="button" data-idea-cancel>취소</button></form>';
+      }
+      return '<div class="idea-item' + (S.busy.has(key) ? ' busy' : '') + '"' + pad + '><span class="t">' + show(it.text) + '</span>' +
+        '<button type="button" class="icon-btn sm" data-idea-edit="' + h(key) + '" aria-label="이 아이디어 고치기">' + ICON.edit + '</button>' +
+        '<button type="button" class="icon-btn sm" data-idea-del="' + h(key) + '" aria-label="이 아이디어 지우기">' + ICON.trash + '</button></div>';
+    }).join('');
+    const para = !s.isList && s.text ? '<p>' + show(s.text) + '</p>' : '';
+    const id = 'idea-add-' + date;
+    return '<div class="sec"><h3>새로운 아이디어</h3>' + para +
+      (rows ? '<div class="idea-list">' + rows + '</div>' : (para ? '' : '<div class="hint">아직 없어요.</div>')) +
+      '<form class="idea-add" data-idea-add="' + date + '"><label for="' + id + '" class="sr-only">' + kor(date) + ' 아이디어 추가</label>' +
+      '<input class="field" id="' + id + '" type="text" placeholder="이 날에 아이디어 추가" enterkeyhint="done"><button class="btn" type="submit">추가</button></form></div>';
   }
 
   function renderCalendar() {
@@ -429,7 +497,14 @@
       if (t.dataset.kind) { S.kind = t.dataset.kind; renderHeader(); $('#quick-input').focus(); }
       else if (t.dataset.done) { S.showDone = t.dataset.done === '1'; renderTodos(); }
       else if (t.dataset.open) openLog(t.dataset.open);
-      else if ('back' in t.dataset) { flushFields(); S.openDate = null; renderLogs(); }
+      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.editIdea = null; renderLogs(); }
+      else if (t.dataset.ideaEdit) {
+        S.editIdea = t.dataset.ideaEdit; renderLogs();
+        const inp = $('#idea-edit-input');
+        if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+      }
+      else if ('ideaCancel' in t.dataset) { S.editIdea = null; renderLogs(); }
+      else if (t.dataset.ideaDel) { if (window.confirm('이 아이디어를 지울까요?')) changeIdea(t.dataset.ideaDel, null); }
       else if (t.dataset.tabBtn) { S.tab = t.dataset.tabBtn; if (S.tab !== 'log') { flushFields(); } renderHeader(); window.scrollTo(0, 0); }
       else if (t.dataset.month) {
         const [y, m] = S.month; const n = m + Number(t.dataset.month);
@@ -452,6 +527,26 @@
     document.addEventListener('focusout', (e) => {
       const f = e.target;
       if (f.dataset && f.dataset.field && f.dataset.field in S.drafts) { clearTimeout(timers[f.dataset.field]); saveField(f.dataset.field); }
+    });
+    document.addEventListener('submit', (e) => {
+      const f = e.target;
+      if (f.dataset.ideaSave) {
+        e.preventDefault();
+        const r = ideaRef(f.dataset.ideaSave);
+        const v = f.querySelector('input').value.replace(/\s+/g, ' ').trim();
+        if (!r || v === r.it.text) { S.editIdea = null; renderLogs(); return; }
+        if (!v) { if (window.confirm('비워 두면 이 아이디어를 지워요. 지울까요?')) changeIdea(f.dataset.ideaSave, null); return; }
+        changeIdea(f.dataset.ideaSave, v);
+      } else if (f.dataset.ideaAdd) {
+        e.preventDefault();
+        const inp = f.querySelector('input');
+        const v = inp.value;
+        inp.value = '';
+        addIdea(f.dataset.ideaAdd, v);
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-idea-input]')) { S.editIdea = null; renderLogs(); }
     });
     $('#quick').addEventListener('submit', async (e) => {
       e.preventDefault();

@@ -60,6 +60,20 @@ let old = '# x\n\n## 남은 일\n- [ ] a\n\n## 오늘의 일기\n일기\n';
 old = MD.appendToSection(old, '새로운 아이디어', '- 새 생각', '오늘의 일기');
 ok(old === '# x\n\n## 남은 일\n- [ ] a\n\n## 새로운 아이디어\n- 새 생각\n\n## 오늘의 일기\n일기\n', '없는 칸은 오늘의 일기 앞에 만든다');
 
+// 아이디어 고치기 · 지우기
+let ideaDoc = '# x\n\n## 새로운 아이디어\n- 하나\n\t- 둘(들여씀)\n- 셋\n\n## 오늘의 일기\n일기\n';
+let ideaSec = MD.parseLog(ideaDoc).sections.find((x) => x.name === '새로운 아이디어');
+ok(ideaSec.items.length === 3 && ideaSec.items[1].line === 4, '아이디어마다 줄 번호가 있다');
+let edited = MD.editBullet(ideaDoc, ideaSec.items[1], '둘 고침');
+ok(edited.indexOf('\t- 둘 고침\n') >= 0 && edited.indexOf('- 하나\n') >= 0, '고치면 그 줄 글만 바뀌고 들여쓰기는 남는다');
+let removed = MD.editBullet(ideaDoc, ideaSec.items[0], null);
+ok(removed === '# x\n\n## 새로운 아이디어\n\t- 둘(들여씀)\n- 셋\n\n## 오늘의 일기\n일기\n', '지우면 그 줄만 빠진다');
+let shifted = '첫 줄 추가\n' + ideaDoc;
+ok(MD.editBullet(shifted, ideaSec.items[2], '셋!').indexOf('- 셋!') >= 0, '줄 번호가 밀려도 같은 줄을 찾아 고친다');
+let dup = '## 새로운 아이디어\n- 같음\n- 같음\n';
+let threw = false; try { MD.editBullet(dup, { line: 9, raw: '- 같음' }, 'x'); } catch (e) { threw = true; }
+ok(threw, '어느 줄인지 모호하면 고치지 않는다');
+
 ok(MD.display('[[CT]]와 [[a|별칭]] `code`') === 'CT와 별칭 code', '위키링크 표시');
 
 print(fails ? fails + '개 실패' : '모두 통과');

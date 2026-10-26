@@ -117,7 +117,7 @@
         const t = l.match(TASK);
         const b = l.match(BULLET);
         if (t) items.push({ kind: 'task', line: i, depth: depthOf(t[1]), done: t[2] !== ' ', text: t[3] });
-        else if (b) items.push({ kind: 'bullet', depth: depthOf(b[1]), text: b[2] });
+        else if (b) items.push({ kind: 'bullet', line: i, raw: l, depth: depthOf(b[1]), text: b[2] });
         else { isList = false; break; }
       }
       return { name: s.name, text: body.join('\n'), isList, items: isList ? items : [] };
@@ -139,18 +139,29 @@
     return Math.floor(w / 4) || (w >= 2 ? 1 : 0);
   }
 
-  // 체크 표시만 뒤집는다. 줄 번호가 어긋났으면 같은 문장의 줄을 하나만 찾아서 쓴다.
+  // 읽을 때 본 줄(ref: {line, raw})을 지금 파일에서 찾는다. 줄 번호가 어긋났으면 같은 줄이 하나뿐일 때만 그 줄을 쓴다.
+  function locate(lines, ref, what) {
+    if (lines[ref.line] === ref.raw) return ref.line;
+    const hits = [];
+    lines.forEach((l, i) => { if (l === ref.raw) hits.push(i); });
+    if (hits.length === 1) return hits[0];
+    throw new Error('파일이 그사이 바뀌어서 이 ' + what + '을 찾지 못했어요. 새로고침해 주세요.');
+  }
+
+  // 체크 표시만 뒤집는다.
   function toggleTask(text, task) {
     const { lines, eol } = splitLines(text);
-    let idx = -1;
-    if (lines[task.line] === task.raw) idx = task.line;
-    else {
-      const hits = [];
-      lines.forEach((l, i) => { if (l === task.raw) hits.push(i); });
-      if (hits.length === 1) idx = hits[0];
-    }
-    if (idx < 0) throw new Error('파일이 그사이 바뀌어서 이 할 일을 찾지 못했어요. 새로고침해 주세요.');
+    const idx = locate(lines, task, '할 일');
     lines[idx] = lines[idx].replace(/\[( |x|X)\]/, (_, c) => (c === ' ' ? '[x]' : '[ ]'));
+    return lines.join(eol);
+  }
+
+  // 목록 한 줄의 글만 바꾼다(들여쓰기 · 글머리표는 그대로). newText가 null이면 그 줄을 지운다.
+  function editBullet(text, ref, newText) {
+    const { lines, eol } = splitLines(text);
+    const idx = locate(lines, ref, '줄');
+    if (newText == null) lines.splice(idx, 1);
+    else lines[idx] = lines[idx].match(/^\s*[-*+]\s+/)[0] + newText;
     return lines.join(eol);
   }
 
@@ -226,6 +237,6 @@
       .replace(/`([^`]+)`/g, '$1');
   }
 
-  const api = { parseLog, getSectionText, toggleTask, appendToSection, setSectionText, touchModified, fillTemplate, display, splitLines };
+  const api = { parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);
