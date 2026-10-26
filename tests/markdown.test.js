@@ -29,7 +29,7 @@ for (const p of logPaths) {
 const tpl = read(tplPath);
 let doc = MD.fillTemplate(tpl, '2026-10-26', '09:30');
 ok(!/\{\{(date|time)/.test(doc), '양식의 날짜 · 시각 칸이 모두 채워진다');
-ok(/^author: Taylor$/m.test(doc) && !/^model:/m.test(doc), 'author: Taylor, model 줄 없음');
+ok(/^author: \[Taylor\]$/m.test(doc) && !/^model:/m.test(doc), 'author: [Taylor], model 줄 없음');
 let p = MD.parseLog(doc);
 ok(p.tasks.length === 0 && p.ideas.length === 0 && p.oneLine === '' && p.diary === '', '빈 양식에는 할 일 · 아이디어 · 글이 없다');
 
@@ -81,6 +81,34 @@ ok(taskSec.items[1].raw === '- [x] 한 것', '할 일에도 원래 줄이 붙는
 ok(MD.editBullet(taskDoc, taskSec.items[0], '안 한 것 고침') === '## 남은 일\n- [ ] 안 한 것 고침\n- [x] 한 것\n', '안 한 할 일을 고쳐도 [ ]가 남는다');
 ok(MD.editBullet(taskDoc, taskSec.items[1], '한 것 고침') === '## 남은 일\n- [ ] 안 한 것\n- [x] 한 것 고침\n', '한 할 일을 고쳐도 [x]가 남는다');
 ok(MD.editBullet(taskDoc, taskSec.items[0], null) === '## 남은 일\n- [x] 한 것\n', '할 일을 지우면 그 줄만 빠진다');
+
+// Claude 콜아웃 안의 할 일 · 목록
+const co = [
+  '---', 'author: [Claude]', 'model: claude-opus-5-5', '---', '# x', '',
+  '## 한 줄 요약', '> [!claude] 2026-10-26T14:00', '> 대시보드를 만들었다.', '',
+  '## 남은 일', '- [ ] 내가 쓴 할 일', '', '> [!claude] 2026-10-26T14:00', '> - [ ] Claude 할 일 하나', '> - [x] Claude 할 일 둘', '',
+  '## 오늘의 일기', '일기'
+].join('\n');
+const cp = MD.parseLog(co);
+ok(cp.tasks.length === 3, '콜아웃 안의 할 일도 센다');
+ok(cp.tasks[1].text === 'Claude 할 일 하나' && cp.tasks[1].by === 'claude' && !cp.tasks[0].by, '누가 쓴 할 일인지 안다');
+ok(cp.summary === '대시보드를 만들었다.', '콜아웃 안 글은 > 와 머리줄을 떼고 읽는다');
+const csec = cp.sections.find((x) => x.name === '남은 일');
+ok(csec.isList && csec.items.some((x) => x.kind === 'callout'), '목록 칸에 Claude 덩어리 표시가 남는다');
+let ct = MD.toggleTask(co, cp.tasks[1]);
+ok(ct.indexOf('> - [x] Claude 할 일 하나') >= 0, '콜아웃 안 할 일을 체크하면 > 가 남는다');
+ok(MD.editBullet(co, cp.tasks[2], '고침').indexOf('> - [x] 고침') >= 0, '콜아웃 안 할 일을 고쳐도 > 와 [x]가 남는다');
+let ca = MD.appendToSection(co, '남은 일', '- [ ] 대시보드로 더함');
+ok(ca.indexOf('> - [x] Claude 할 일 둘\n\n- [ ] 대시보드로 더함\n') >= 0, '콜아웃 뒤에 더하면 빈 줄을 두고 콜아웃 밖에 넣는다');
+ok(MD.parseLog(ca).tasks.find((t) => t.text === '대시보드로 더함').by == null, '더한 할 일은 Claude 것이 아니다');
+
+// author 목록
+const fm = (a) => '---\ntype: daily-log\n' + a + '\nmodel: claude-opus-5-5\n---\n본문\n';
+ok(MD.addAuthor(fm('author: Claude'), 'Taylor') === fm('author: [Claude, Taylor]'), '예전 형식 author에 Taylor를 더한다');
+ok(MD.addAuthor(fm('author: [Claude]'), 'Taylor') === fm('author: [Claude, Taylor]'), '목록 author에 Taylor를 더한다');
+ok(MD.addAuthor(fm('author:\n  - Claude'), 'Taylor') === fm('author: [Claude, Taylor]'), '줄마다 쓴 author도 읽는다');
+ok(MD.addAuthor(fm('author: [Taylor, Claude]'), 'Taylor') === fm('author: [Taylor, Claude]'), '이미 있으면 그대로');
+ok(MD.addAuthor('---\ntype: x\n---\n', 'Taylor') === '---\ntype: x\nauthor: [Taylor]\n---\n', 'author 칸이 없으면 만든다');
 
 ok(MD.display('[[CT]]와 [[a|별칭]] `code`') === 'CT와 별칭 code', '위키링크 표시');
 

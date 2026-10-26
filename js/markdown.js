@@ -1,11 +1,20 @@
 // 데일리 로그 md를 읽고 고치는 순수 함수들. 브라우저와 테스트(jsc)에서 같이 쓴다.
-// 원칙: Taylor가 쓴 문장은 건드리지 않는다. 바꾸는 것은 체크 표시, 지정한 칸의 내용, modified 시각뿐.
+// 원칙: Taylor가 쓴 문장은 건드리지 않는다. 바꾸는 것은 체크 표시, 지정한 칸의 내용, modified 시각, author 목록뿐.
+// Claude가 쓴 내용은 > [!claude] 콜아웃 안에 있다(볼트 Rules/작업 규칙.md 20). 콜아웃 안의 줄도 같은 할 일 · 목록으로 읽는다.
 (function (global) {
   'use strict';
 
   const HEADING = /^##\s+(.+?)\s*$/;
   const TASK = /^(\s*)[-*+] \[( |x|X)\]\s?(.*)$/;
   const BULLET = /^(\s*)[-*+]\s+(.*)$/;
+  const QUOTE = /^((?:[ \t]*>[ \t]?)+)/;
+  const CALLOUT = /^[ \t]*>[ \t]*\[!([\w-]+)\][+-]?[ \t]*(.*)$/;
+
+  // 인용 · 콜아웃 접두(>)를 떼고 본문만.
+  function unquote(line) {
+    const m = line.match(QUOTE);
+    return m ? { q: m[1], body: line.slice(m[1].length) } : { q: '', body: line };
+  }
 
   function splitLines(text) {
     const eol = text.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
@@ -37,7 +46,7 @@
 
   // 양식의 빈 자리 표시 줄: "- [ ] ", "- ", "- 신규: ", 괄호 안내문.
   function isPlaceholder(line) {
-    const t = line.trim();
+    const t = unquote(line).body.trim();
     if (t === '-' || t === '- [ ]' || t === '- [x]') return true;
     if (/^- (신규|수정):\s*$/.test(t)) return true;
     if (/^\(내가 쓴다.*\)$/.test(t)) return true;
@@ -100,27 +109,46 @@
     const secs = sections(lines);
     const tasks = [];
     const start = bodyStart(lines);
+    const by = calloutOwners(lines, start);
     for (let i = start; i < lines.length; i++) {
       if (mask[i]) continue;
-      const m = lines[i].match(TASK);
+      const m = unquote(lines[i]).body.match(TASK);
       if (!m || !m[3].trim()) continue;
       const sec = secs.find((s) => i >= s.start && i < s.end);
-      tasks.push({ line: i, raw: lines[i], indent: m[1].replace(/\t/g, '    ').length, done: m[2] !== ' ', text: m[3], section: sec ? sec.name : '' });
+      tasks.push({ line: i, raw: lines[i], indent: m[1].replace(/\t/g, '    ').length, done: m[2] !== ' ', text: m[3], section: sec ? sec.name : '', by: by[i] });
     }
+    // 칸마다: 글(text, 콜아웃 머리줄과 > 는 뺌), 목록이면 items, 그리고 누가 쓴 덩어리인지(parts).
+    // 콜아웃 머리줄은 items에 { kind: 'callout' }로 남겨 화면이 「Claude가 씀」 표시를 붙이게 한다.
     const view = secs.map((s) => {
       const rows = contentRows(lines, s, mask);
-      const body = rows.map((r) => r.l);
       const items = [];
-      let isList = body.length > 0;
+      const parts = [];
+      const body = [];
+      let isList = rows.length > 0;
       for (const { i, l } of rows) {
-        if (!l.trim()) continue;
-        const t = l.match(TASK);
-        const b = l.match(BULLET);
-        if (t) items.push({ kind: 'task', line: i, raw: l, depth: depthOf(t[1]), done: t[2] !== ' ', text: t[3] });
-        else if (b) items.push({ kind: 'bullet', line: i, raw: l, depth: depthOf(b[1]), text: b[2] });
-        else { isList = false; break; }
+        const head = l.match(CALLOUT);
+        const owner = by[i] || null;
+        const last = parts[parts.length - 1];
+        if (head) {
+          items.push({ kind: 'callout', type: head[1].toLowerCase(), title: head[2] });
+          parts.push({ by: owner, title: head[2], lines: [] });
+          continue;
+        }
+        const u = unquote(l).body;
+        body.push(u);
+        if (!last || last.by !== owner) parts.push({ by: owner, title: '', lines: [u] });
+        else last.lines.push(u);
+        if (!u.trim()) continue;
+        const t = u.match(TASK);
+        const b = u.match(BULLET);
+        if (t) items.push({ kind: 'task', line: i, raw: l, depth: depthOf(t[1]), done: t[2] !== ' ', text: t[3], by: owner });
+        else if (b) items.push({ kind: 'bullet', line: i, raw: l, depth: depthOf(b[1]), text: b[2], by: owner });
+        else isList = false;
       }
-      return { name: s.name, text: body.join('\n'), isList, items: isList ? items : [] };
+      while (body.length && !body[0].trim()) body.shift();
+      while (body.length && !body[body.length - 1].trim()) body.pop();
+      const textParts = parts.map((p) => ({ by: p.by, title: p.title, text: p.lines.join('\n').trim() })).filter((p) => p.text);
+      return { name: s.name, text: body.join('\n'), isList: isList && items.some((x) => x.kind !== 'callout'), items: isList ? items : [], parts: textParts };
     });
     const get = (n) => { const v = view.find((s) => s.name === n); return v ? v.text : ''; };
     const ideaSec = view.find((s) => s.name === '새로운 아이디어');
@@ -132,6 +160,19 @@
       diary: get('오늘의 일기'),
       ideas: ideaSec ? ideaSec.items.filter((x) => x.kind === 'bullet').map((x) => x.text) : (ideaSec && ideaSec.text ? [ideaSec.text] : [])
     };
+  }
+
+  // 줄 번호 → 그 줄을 감싼 콜아웃 종류(claude 등). 콜아웃은 머리줄부터 > 로 시작하는 줄이 끊길 때까지.
+  function calloutOwners(lines, start) {
+    const by = [];
+    let cur = null;
+    for (let i = start; i < lines.length; i++) {
+      const head = lines[i].match(CALLOUT);
+      if (head) cur = head[1].toLowerCase();
+      else if (!QUOTE.test(lines[i])) cur = null;
+      by[i] = cur;
+    }
+    return by;
   }
 
   function depthOf(indent) {
@@ -161,11 +202,12 @@
     const { lines, eol } = splitLines(text);
     const idx = locate(lines, ref, '줄');
     if (newText == null) lines.splice(idx, 1);
-    else lines[idx] = lines[idx].match(/^\s*[-*+]\s+(\[( |x|X)\]\s?)?/)[0] + newText;
+    else lines[idx] = lines[idx].match(/^((?:[ \t]*>[ \t]?)*)\s*[-*+]\s+(\[( |x|X)\]\s?)?/)[0] + newText;
     return lines.join(eol);
   }
 
-  // 칸 끝(마지막 내용 줄 다음)에 한 줄을 넣는다. 빈 자리 표시 줄이 있으면 그 줄을 대신한다.
+  // 칸 끝(마지막 내용 줄 다음)에 한 줄을 넣는다. 빈 자리 표시 줄이 있으면 그 줄을 대신한다(콜아웃 안의 것은 빼고).
+  // 마지막 줄이 콜아웃(>)이면 빈 줄을 하나 두어 Claude 콜아웃 밖에 들어가게 한다.
   // 칸이 없으면 before 칸 앞(없으면 파일 끝)에 칸을 새로 만든다.
   function appendToSection(text, name, newLine, before) {
     const { lines, eol } = splitLines(text);
@@ -179,14 +221,14 @@
       return lines.join(eol);
     }
     for (let i = sec.start; i < sec.end; i++) {
-      if (!mask[i] && isPlaceholder(lines[i]) && lines[i].trim().startsWith('-')) {
+      if (!mask[i] && !QUOTE.test(lines[i]) && isPlaceholder(lines[i]) && lines[i].trim().startsWith('-')) {
         lines[i] = newLine;
         return lines.join(eol);
       }
     }
     let last = sec.heading;
     for (let i = sec.start; i < sec.end; i++) if (lines[i].trim()) last = i;
-    lines.splice(last + 1, 0, newLine);
+    lines.splice(last + 1, 0, ...(QUOTE.test(lines[last]) ? ['', newLine] : [newLine]));
     return lines.join(eol);
   }
 
@@ -222,10 +264,36 @@
     return text;
   }
 
-  // 양식 채우기. 대시보드로 만든 로그는 Taylor가 쓰는 것이므로 author: Taylor, model 줄은 뺀다.
+  // author 목록에 이름을 더한다(이미 있으면 그대로). 볼트 규칙: author는 [Taylor, Claude] 같은 목록.
+  // 예전 형식(author: Taylor, 또는 줄마다 - 이름)도 읽어서 목록으로 바꿔 쓴다.
+  function addAuthor(text, name) {
+    const { lines, eol } = splitLines(text);
+    if (lines[0] !== '---') return text;
+    let end = lines.indexOf('---', 1);
+    if (end < 0) return text;
+    let at = -1;
+    for (let i = 1; i < end; i++) if (/^author:/.test(lines[i])) { at = i; break; }
+    let names = [];
+    let span = 1;
+    if (at >= 0) {
+      const v = lines[at].slice(7).trim();
+      if (v.startsWith('[')) names = v.replace(/^\[|\]$/g, '').split(',');
+      else if (v) names = [v];
+      else while (at + span < end && /^\s+-\s/.test(lines[at + span])) { names.push(lines[at + span].replace(/^\s+-\s*/, '')); span++; }
+      names = names.map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    }
+    if (names.includes(name)) return text;
+    names.push(name);
+    const line = 'author: [' + names.join(', ') + ']';
+    if (at >= 0) lines.splice(at, span, line);
+    else lines.splice(end, 0, line);
+    return lines.join(eol);
+  }
+
+  // 양식 채우기. 대시보드로 만든 로그는 Taylor가 쓰기 시작한 것이므로 author: [Taylor], model 줄은 뺀다.
   function fillTemplate(tpl, date, time) {
     let t = tpl.replace(/\{\{date(:[^}]*)?\}\}/g, date).replace(/\{\{time(:[^}]*)?\}\}/g, time);
-    t = t.replace(/^author:.*$/m, 'author: Taylor').replace(/^model:.*\r?\n/m, '');
+    t = t.replace(/^author:.*\r?\n(?:[ \t]+-.*\r?\n)*/m, 'author: [Taylor]\n').replace(/^model:.*\r?\n/m, '');
     return t;
   }
 
@@ -237,6 +305,6 @@
       .replace(/`([^`]+)`/g, '$1');
   }
 
-  const api = { parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, fillTemplate, display, splitLines };
+  const api = { parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);

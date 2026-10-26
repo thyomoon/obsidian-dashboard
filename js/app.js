@@ -143,9 +143,11 @@
 
   // ---------- 쓰기 ----------
   // 늘 최신 파일을 받아서 고친 다음 올린다(다른 기기에서 고친 내용을 덮어쓰지 않게).
-  async function mutate(id, fn) {
+  // mine: Taylor가 글을 쓴 변경(더하기 · 고치기 · 칸 쓰기)이면 author에 Taylor를 더한다. 체크 · 지우기는 아니다.
+  async function mutate(id, fn, mine) {
     const fresh = await G.readText(id);
-    const next = MD.touchModified(fn(fresh), stamp());
+    let next = MD.touchModified(fn(fresh), stamp());
+    if (mine) next = MD.addAuthor(next, 'Taylor');
     const res = await G.writeText(id, next);
     putFile(id, next, res.modifiedTime);
     saveCache();
@@ -213,7 +215,7 @@
     if (!r) { renderLogs(); return; }
     S.busy.add(key); renderLogs();
     try {
-      await mutate(r.id, (t) => MD.editBullet(t, r.it, newText));
+      await mutate(r.id, (t) => MD.editBullet(t, r.it, newText), newText != null);
       toast(r.word + (newText == null ? '을 지웠어요.' : '을 고쳤어요.'));
     } catch (e) { fail(e); }
     finally { S.busy.delete(key); renderAll(); }
@@ -226,7 +228,7 @@
     try {
       const id = date === S.today ? await ensureToday() : (logByDate(date) || {}).id;
       if (!id) return;
-      await mutate(id, (t) => MD.appendToSection(t, secName, L.line(v), L.before));
+      await mutate(id, (t) => MD.appendToSection(t, secName, L.line(v), L.before), true);
       renderAll();
       const inp = document.getElementById(addInputId(secName, date));
       if (inp) inp.focus();
@@ -240,7 +242,7 @@
     try {
       const id = await ensureToday();
       const sec = S.kind === 'todo' ? '남은 일' : '새로운 아이디어';
-      await mutate(id, (t) => MD.appendToSection(t, sec, LISTS[sec].line(v), LISTS[sec].before));
+      await mutate(id, (t) => MD.appendToSection(t, sec, LISTS[sec].line(v), LISTS[sec].before), true);
       toast(S.kind === 'todo' ? '오늘 로그 「남은 일」에 넣었어요.' : '오늘 로그 「새로운 아이디어」에 넣었어요.');
       renderAll();
       return true;
@@ -274,7 +276,7 @@
       return;
     }
     const before = name === '내 한 줄' ? ['한 줄 요약', '한 일', '남은 일'] : [];
-    const next = MD.touchModified(MD.setSectionText(fresh, name, value, before), stamp());
+    const next = MD.addAuthor(MD.touchModified(MD.setSectionText(fresh, name, value, before), stamp()), 'Taylor');
     const res = await G.writeText(id, next);
     putFile(id, next, res.modifiedTime);
     saveCache();
@@ -316,7 +318,7 @@
       const key = log.id + ':' + t.line;
       return '<div class="todo' + (t.done ? ' done' : '') + (S.busy.has(key) ? ' busy' : '') + '">' +
         '<label><input type="checkbox" data-toggle="' + h(log.id) + '" data-line="' + t.line + '"' + (t.done ? ' checked' : '') + (S.busy.has(key) ? ' disabled' : '') + '>' +
-        '<span class="txt" style="padding-left:' + Math.min(t.indent, 8) * 4 + 'px">' + show(t.text) + '</span></label>' +
+        '<span class="txt" style="padding-left:' + Math.min(t.indent, 8) * 4 + 'px">' + show(t.text) + (t.by === 'claude' ? ' <span class="who">Claude</span>' : '') + '</span></label>' +
         '<button type="button" class="chip' + (log.date === S.today ? ' today' : '') + '" data-open="' + log.date + '" title="' + h(log.date) + ' 데일리 로그 보기">' + md(log.date) + ICON.out + '</button>' +
         '</div>';
     }).join('');
@@ -415,14 +417,21 @@
       const hint = isToday ? (s.name === '남은 일' ? '위 입력칸에서 「할 일」로 쓰면 여기에 들어가요.' : '위 입력칸에서 「아이디어」로 쓰면 여기에 들어가요.') : '비어 있음';
       return '<div class="sec">' + head + '<div class="hint">' + hint + '</div></div>';
     }
-    if (!s.isList) return '<div class="sec">' + head + '<p>' + show(s.text) + '</p></div>';
+    if (!s.isList) {
+      const parts = (s.parts && s.parts.length ? s.parts : [{ text: s.text }]).map((pt) =>
+        (pt.by === 'claude' ? byClaude(pt) : '') + '<p' + (pt.by === 'claude' ? ' class="claude"' : '') + '>' + show(pt.text) + '</p>').join('');
+      return '<div class="sec">' + head + parts + '</div>';
+    }
     const items = s.items.map((it) => {
       const pad = ' style="padding-left:' + it.depth * 20 + 'px"';
+      if (it.kind === 'callout') return it.type === 'claude' ? byClaude(it) : '';
       if (it.kind === 'task') return taskHtml(it, l);
       return '<div class="li"' + pad + '><span class="b">·</span><span>' + show(it.text) + '</span></div>';
     }).join('');
     return '<div class="sec">' + head + '<div>' + items + '</div></div>';
   }
+
+  const byClaude = (it) => '<div class="by-claude">Claude가 씀' + (it.title ? ' · ' + h(it.title) : '') + '</div>';
 
   function taskHtml(it, l) {
     const pad = ' style="padding-left:' + it.depth * 20 + 'px"';
@@ -435,6 +444,7 @@
     const L = LISTS[s.name];
     const isIdea = s.name === '새로운 아이디어';
     const rows = (s.isList ? s.items : []).map((it) => {
+      if (it.kind === 'callout') return it.type === 'claude' ? byClaude(it) : '';
       const key = l.id + ':' + it.line;
       const pad = it.depth ? ' style="margin-left:' + it.depth * 20 + 'px"' : '';
       if (S.editItem === key) {
