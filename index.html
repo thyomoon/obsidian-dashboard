@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>옵시디언 대시보드</title>
+<meta name="theme-color" content="#F6F4F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161413" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="대시보드">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body data-tab="home">
+
+<div id="login" class="login" hidden>
+  <div class="login-card">
+    <div class="eyebrow">옵시디언 대시보드</div>
+    <h1>할 일 · 데일리 로그 · 일정</h1>
+    <p id="login-msg">구글 계정으로 로그인하면 드라이브의 볼트와 구글 캘린더를 불러와요.</p>
+    <button id="login-btn" class="btn primary" type="button">구글로 로그인</button>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header class="top">
+    <div>
+      <div class="eyebrow" id="eyebrow"></div>
+      <h1 id="today-title"></h1>
+    </div>
+    <div class="top-right">
+      <span class="status" id="status"><span class="dot"></span><span id="status-text">불러오는 중</span></span>
+      <button class="btn" type="button" data-action="refresh">새로고침</button>
+      <button class="btn ghost" type="button" data-action="logout" aria-label="로그아웃">로그아웃</button>
+    </div>
+  </header>
+
+  <form class="quick card" id="quick" autocomplete="off">
+    <div class="seg" role="group" aria-label="넣을 종류">
+      <button type="button" data-kind="todo" aria-pressed="true">할 일</button>
+      <button type="button" data-kind="idea" aria-pressed="false">아이디어</button>
+    </div>
+    <label for="quick-input" class="sr-only">빠른 한 줄 입력</label>
+    <input id="quick-input" type="text" enterkeyhint="done">
+    <button class="btn primary add" type="submit" aria-label="오늘 로그에 추가"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>오늘 로그에 추가</span></button>
+  </form>
+
+  <main class="grid">
+    <section class="card" id="todos" data-tab="home" aria-labelledby="todos-h"></section>
+    <section class="card" id="events" data-tab="home" aria-labelledby="events-h"></section>
+    <section class="card" id="logs" data-tab="log" aria-labelledby="logs-h"></section>
+    <section class="card" id="calendar" data-tab="cal" aria-labelledby="cal-h"></section>
+  </main>
+
+  <nav class="tabbar" aria-label="화면 전환">
+    <button type="button" data-tab-btn="home" aria-pressed="true">오늘</button>
+    <button type="button" data-tab-btn="log" aria-pressed="false">로그</button>
+    <button type="button" data-tab-btn="cal" aria-pressed="false">달력</button>
+  </nav>
+</div>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="js/config.js"></script>
+<script src="js/markdown.js"></script>
+<script src="js/google.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

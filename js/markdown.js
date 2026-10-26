@@ -1,0 +1,231 @@
+// 데일리 로그 md를 읽고 고치는 순수 함수들. 브라우저와 테스트(jsc)에서 같이 쓴다.
+// 원칙: Taylor가 쓴 문장은 건드리지 않는다. 바꾸는 것은 체크 표시, 지정한 칸의 내용, modified 시각뿐.
+(function (global) {
+  'use strict';
+
+  const HEADING = /^##\s+(.+?)\s*$/;
+  const TASK = /^(\s*)[-*+] \[( |x|X)\]\s?(.*)$/;
+  const BULLET = /^(\s*)[-*+]\s+(.*)$/;
+
+  function splitLines(text) {
+    const eol = text.indexOf('\r\n') >= 0 ? '\r\n' : '\n';
+    return { lines: text.split(/\r?\n/), eol };
+  }
+
+  // 프론트매터 끝 다음 줄 번호. 프론트매터가 없으면 0.
+  function bodyStart(lines) {
+    if (lines[0] !== '---') return 0;
+    for (let i = 1; i < lines.length; i++) if (lines[i] === '---') return i + 1;
+    return 0;
+  }
+
+  // 각 줄이 HTML 주석 안에 있는지 표시한다(여러 줄 주석 포함).
+  function commentMask(lines) {
+    const mask = new Array(lines.length).fill(false);
+    let open = false;
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      if (open) { mask[i] = true; if (l.indexOf('-->') >= 0) open = false; continue; }
+      const t = l.trim();
+      if (t.startsWith('<!--')) {
+        mask[i] = true;
+        if (t.indexOf('-->') < 0) open = true;
+      }
+    }
+    return mask;
+  }
+
+  // 양식의 빈 자리 표시 줄: "- [ ] ", "- ", "- 신규: ", 괄호 안내문.
+  function isPlaceholder(line) {
+    const t = line.trim();
+    if (t === '-' || t === '- [ ]' || t === '- [x]') return true;
+    if (/^- (신규|수정):\s*$/.test(t)) return true;
+    if (/^\(내가 쓴다.*\)$/.test(t)) return true;
+    return false;
+  }
+
+  function sections(lines) {
+    const out = [];
+    const start = bodyStart(lines);
+    let cur = null;
+    for (let i = start; i < lines.length; i++) {
+      const m = lines[i].match(HEADING);
+      if (m) {
+        if (cur) cur.end = i;
+        cur = { name: m[1].normalize('NFC'), heading: i, start: i + 1, end: lines.length };
+        out.push(cur);
+      }
+    }
+    return out;
+  }
+
+  function findSection(lines, name) {
+    const n = name.normalize('NFC');
+    return sections(lines).find((s) => s.name === n) || null;
+  }
+
+  // 칸의 실제 내용(주석 · 자리 표시 제외), 앞뒤 빈 줄 제거.
+  function contentRows(lines, sec, mask) {
+    const out = [];
+    for (let i = sec.start; i < sec.end; i++) {
+      if (mask[i] || isPlaceholder(lines[i])) continue;
+      out.push({ i, l: lines[i] });
+    }
+    while (out.length && !out[0].l.trim()) out.shift();
+    while (out.length && !out[out.length - 1].l.trim()) out.pop();
+    return out;
+  }
+
+  function contentLines(lines, sec, mask) {
+    return contentRows(lines, sec, mask).map((r) => r.l);
+  }
+
+  // before: 칸 이름 하나 또는 여러 개 — 있는 것 중 첫 칸 앞에 넣는다.
+  function insertAt(lines, before) {
+    const names = [].concat(before || []);
+    for (const n of names) { const b = findSection(lines, n); if (b) return b.heading; }
+    return lines.length;
+  }
+
+  function getSectionText(text, name) {
+    const { lines } = splitLines(text);
+    const sec = findSection(lines, name);
+    if (!sec) return '';
+    return contentLines(lines, sec, commentMask(lines)).join('\n');
+  }
+
+  function parseLog(text) {
+    const { lines } = splitLines(text);
+    const mask = commentMask(lines);
+    const secs = sections(lines);
+    const tasks = [];
+    const start = bodyStart(lines);
+    for (let i = start; i < lines.length; i++) {
+      if (mask[i]) continue;
+      const m = lines[i].match(TASK);
+      if (!m || !m[3].trim()) continue;
+      const sec = secs.find((s) => i >= s.start && i < s.end);
+      tasks.push({ line: i, raw: lines[i], indent: m[1].replace(/\t/g, '    ').length, done: m[2] !== ' ', text: m[3], section: sec ? sec.name : '' });
+    }
+    const view = secs.map((s) => {
+      const rows = contentRows(lines, s, mask);
+      const body = rows.map((r) => r.l);
+      const items = [];
+      let isList = body.length > 0;
+      for (const { i, l } of rows) {
+        if (!l.trim()) continue;
+        const t = l.match(TASK);
+        const b = l.match(BULLET);
+        if (t) items.push({ kind: 'task', line: i, depth: depthOf(t[1]), done: t[2] !== ' ', text: t[3] });
+        else if (b) items.push({ kind: 'bullet', depth: depthOf(b[1]), text: b[2] });
+        else { isList = false; break; }
+      }
+      return { name: s.name, text: body.join('\n'), isList, items: isList ? items : [] };
+    });
+    const get = (n) => { const v = view.find((s) => s.name === n); return v ? v.text : ''; };
+    const ideaSec = view.find((s) => s.name === '새로운 아이디어');
+    return {
+      tasks,
+      sections: view,
+      oneLine: get('내 한 줄'),
+      summary: get('한 줄 요약'),
+      diary: get('오늘의 일기'),
+      ideas: ideaSec ? ideaSec.items.filter((x) => x.kind === 'bullet').map((x) => x.text) : (ideaSec && ideaSec.text ? [ideaSec.text] : [])
+    };
+  }
+
+  function depthOf(indent) {
+    const w = indent.replace(/\t/g, '    ').length;
+    return Math.floor(w / 4) || (w >= 2 ? 1 : 0);
+  }
+
+  // 체크 표시만 뒤집는다. 줄 번호가 어긋났으면 같은 문장의 줄을 하나만 찾아서 쓴다.
+  function toggleTask(text, task) {
+    const { lines, eol } = splitLines(text);
+    let idx = -1;
+    if (lines[task.line] === task.raw) idx = task.line;
+    else {
+      const hits = [];
+      lines.forEach((l, i) => { if (l === task.raw) hits.push(i); });
+      if (hits.length === 1) idx = hits[0];
+    }
+    if (idx < 0) throw new Error('파일이 그사이 바뀌어서 이 할 일을 찾지 못했어요. 새로고침해 주세요.');
+    lines[idx] = lines[idx].replace(/\[( |x|X)\]/, (_, c) => (c === ' ' ? '[x]' : '[ ]'));
+    return lines.join(eol);
+  }
+
+  // 칸 끝(마지막 내용 줄 다음)에 한 줄을 넣는다. 빈 자리 표시 줄이 있으면 그 줄을 대신한다.
+  // 칸이 없으면 before 칸 앞(없으면 파일 끝)에 칸을 새로 만든다.
+  function appendToSection(text, name, newLine, before) {
+    const { lines, eol } = splitLines(text);
+    const mask = commentMask(lines);
+    let sec = findSection(lines, name);
+    if (!sec) {
+      const at = insertAt(lines, before);
+      const block = ['## ' + name, newLine, ''];
+      if (at > 0 && lines[at - 1].trim()) block.unshift('');
+      lines.splice(at, 0, ...block);
+      return lines.join(eol);
+    }
+    for (let i = sec.start; i < sec.end; i++) {
+      if (!mask[i] && isPlaceholder(lines[i]) && lines[i].trim().startsWith('-')) {
+        lines[i] = newLine;
+        return lines.join(eol);
+      }
+    }
+    let last = sec.heading;
+    for (let i = sec.start; i < sec.end; i++) if (lines[i].trim()) last = i;
+    lines.splice(last + 1, 0, newLine);
+    return lines.join(eol);
+  }
+
+  // 칸의 내용을 바꾼다. 칸 안의 주석 줄은 그대로 맨 위에 남긴다.
+  function setSectionText(text, name, value, before) {
+    const { lines, eol } = splitLines(text);
+    const mask = commentMask(lines);
+    const valueLines = value.replace(/\r\n/g, '\n').replace(/\s+$/, '').split('\n');
+    let sec = findSection(lines, name);
+    if (!sec) {
+      const at = insertAt(lines, before);
+      const block = ['## ' + name].concat(value ? valueLines : []).concat(['']);
+      if (at > 0 && lines[at - 1].trim()) block.unshift('');
+      lines.splice(at, 0, ...block);
+      return lines.join(eol);
+    }
+    const keep = [];
+    for (let i = sec.start; i < sec.end; i++) if (mask[i]) keep.push(lines[i]);
+    const isLast = sec.end === lines.length;
+    const repl = keep.concat(value ? valueLines : []);
+    if (!isLast) repl.push('');
+    else if (lines[lines.length - 1] === '' || value) repl.push('');
+    lines.splice(sec.start, sec.end - sec.start, ...repl);
+    return lines.join(eol);
+  }
+
+  function touchModified(text, stamp) {
+    const { lines, eol } = splitLines(text);
+    if (lines[0] !== '---') return text;
+    for (let i = 1; i < lines.length && lines[i] !== '---'; i++) {
+      if (/^modified:/.test(lines[i])) { lines[i] = 'modified: ' + stamp; return lines.join(eol); }
+    }
+    return text;
+  }
+
+  // 양식 채우기. 대시보드로 만든 로그는 Taylor가 쓰는 것이므로 author: Taylor, model 줄은 뺀다.
+  function fillTemplate(tpl, date, time) {
+    let t = tpl.replace(/\{\{date(:[^}]*)?\}\}/g, date).replace(/\{\{time(:[^}]*)?\}\}/g, time);
+    t = t.replace(/^author:.*$/m, 'author: Taylor').replace(/^model:.*\r?\n/m, '');
+    return t;
+  }
+
+  // 화면 표시용: [[링크|별칭]] → 별칭, [[링크]] → 링크, `코드` → 코드.
+  function display(s) {
+    return String(s)
+      .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
+      .replace(/\[\[([^\]]+)\]\]/g, '$1')
+      .replace(/`([^`]+)`/g, '$1');
+  }
+
+  const api = { parseLog, getSectionText, toggleTask, appendToSection, setSectionText, touchModified, fillTemplate, display, splitLines };
+  global.MD = api;
+})(typeof window !== 'undefined' ? window : this);
