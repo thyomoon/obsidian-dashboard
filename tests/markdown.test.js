@@ -74,6 +74,14 @@ let dup = '## 새로운 아이디어\n- 같음\n- 같음\n';
 let threw = false; try { MD.editBullet(dup, { line: 9, raw: '- 같음' }, 'x'); } catch (e) { threw = true; }
 ok(threw, '어느 줄인지 모호하면 고치지 않는다');
 
+// 할 일 고치기 · 지우기 — 체크 표시는 그대로
+let taskDoc = '## 남은 일\n- [ ] 안 한 것\n- [x] 한 것\n';
+let taskSec = MD.parseLog(taskDoc).sections[0];
+ok(taskSec.items[1].raw === '- [x] 한 것', '할 일에도 원래 줄이 붙는다');
+ok(MD.editBullet(taskDoc, taskSec.items[0], '안 한 것 고침') === '## 남은 일\n- [ ] 안 한 것 고침\n- [x] 한 것\n', '안 한 할 일을 고쳐도 [ ]가 남는다');
+ok(MD.editBullet(taskDoc, taskSec.items[1], '한 것 고침') === '## 남은 일\n- [ ] 안 한 것\n- [x] 한 것 고침\n', '한 할 일을 고쳐도 [x]가 남는다');
+ok(MD.editBullet(taskDoc, taskSec.items[0], null) === '## 남은 일\n- [x] 한 것\n', '할 일을 지우면 그 줄만 빠진다');
+
 ok(MD.display('[[CT]]와 [[a|별칭]] `code`') === 'CT와 별칭 code', '위키링크 표시');
 
 print(fails ? fails + '개 실패' : '모두 통과');

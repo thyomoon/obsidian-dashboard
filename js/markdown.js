@@ -116,7 +116,7 @@
         if (!l.trim()) continue;
         const t = l.match(TASK);
         const b = l.match(BULLET);
-        if (t) items.push({ kind: 'task', line: i, depth: depthOf(t[1]), done: t[2] !== ' ', text: t[3] });
+        if (t) items.push({ kind: 'task', line: i, raw: l, depth: depthOf(t[1]), done: t[2] !== ' ', text: t[3] });
         else if (b) items.push({ kind: 'bullet', line: i, raw: l, depth: depthOf(b[1]), text: b[2] });
         else { isList = false; break; }
       }
@@ -156,12 +156,12 @@
     return lines.join(eol);
   }
 
-  // 목록 한 줄의 글만 바꾼다(들여쓰기 · 글머리표는 그대로). newText가 null이면 그 줄을 지운다.
+  // 목록 한 줄의 글만 바꾼다(들여쓰기 · 글머리표 · 체크 표시는 그대로). newText가 null이면 그 줄을 지운다.
   function editBullet(text, ref, newText) {
     const { lines, eol } = splitLines(text);
     const idx = locate(lines, ref, '줄');
     if (newText == null) lines.splice(idx, 1);
-    else lines[idx] = lines[idx].match(/^\s*[-*+]\s+/)[0] + newText;
+    else lines[idx] = lines[idx].match(/^\s*[-*+]\s+(\[( |x|X)\]\s?)?/)[0] + newText;
     return lines.join(eol);
   }
 

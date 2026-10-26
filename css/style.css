@@ -162,9 +162,17 @@ h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 .sec .idea-item.busy { opacity: .55; }
 .icon-btn.sm { width: 40px; height: 40px; border: 0; background: transparent; color: var(--idea-soft-ink); border-radius: 8px; }
 .icon-btn.sm:hover { background: color-mix(in srgb, var(--idea) 14%, transparent); }
-.idea-add, .idea-edit { display: flex; gap: 8px; align-items: center; }
-.idea-add { margin-top: 4px; }
-.idea-add .field, .idea-edit .field { flex: 1 1 auto; min-width: 0; }
+.tk-list { display: flex; flex-direction: column; }
+.tk-row { display: flex; align-items: center; gap: 2px; min-height: 44px; border-radius: 10px; }
+.tk-row:hover { background: var(--ground); }
+.tk-row .tk { flex: 1 1 auto; min-width: 0; }
+.tk-row.plain .t { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; padding-left: 4px; }
+.tk-row .icon-btn.sm { color: var(--muted); }
+.tk-row.busy { opacity: .55; }
+.item-add, .item-edit { display: flex; gap: 8px; align-items: center; }
+.item-add { margin-top: 4px; }
+.item-edit { padding: 4px 0; }
+.item-add .field, .item-edit .field { flex: 1 1 auto; min-width: 0; }
 .field { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; height: 44px; font-size: 16px; background: var(--card); }
 textarea.field { height: auto; min-height: 220px; padding: 12px 14px; line-height: 1.75; resize: vertical; }
 .hint { font-size: 13px; color: var(--muted); }
