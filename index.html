@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>옵시디언 대시보드</title>
+<meta name="description" content="thyomoon이 자기 옵시디언 볼트(구글 드라이브)와 구글 캘린더를 보려고 만든 개인용 대시보드. 서버 없이 브라우저에서 구글 공식 로그인만 쓴다.">
 <meta name="theme-color" content="#F6F4F2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#161413" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,16 +16,23 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css?v=20261026d">
+<link rel="stylesheet" href="css/style.css?v=20261026e">
 </head>
 <body data-tab="home">
 
 <div id="login" class="login" hidden>
   <div class="login-card">
-    <div class="eyebrow">옵시디언 대시보드</div>
+    <div class="eyebrow">옵시디언 대시보드 · 개인용</div>
     <h1>할 일 · 데일리 로그 · 일정</h1>
     <p id="login-msg">구글 계정으로 로그인하면 드라이브의 볼트와 구글 캘린더를 불러와요.</p>
     <button id="login-btn" class="btn primary" type="button">구글로 로그인</button>
+    <ul class="about">
+      <li><b>무엇</b> — 내 옵시디언 볼트(구글 드라이브의 md 파일)의 할 일 · 데일리 로그와 구글 캘린더 일정을 한 화면에 보여주는 개인용 도구예요.</li>
+      <li><b>로그인</b> — 비밀번호는 이 페이지가 받지 않아요. 구글 공식 로그인 화면(accounts.google.com)으로 가고, 허용한 권한만 받아 와요.</li>
+      <li><b>권한</b> — 드라이브: 구글이 드라이브 전체 권한으로 묻지만, 이 도구는 볼트 폴더만 찾아 데일리 로그를 읽고 써요. 캘린더: 일정 읽기만.</li>
+      <li><b>데이터</b> — 서버가 없어요. 브라우저가 구글 API와 직접 주고받고, 어디에도 보내거나 저장하지 않아요.</li>
+      <li><b>코드</b> — 전부 공개: <a href="https://github.com/thyomoon/obsidian-dashboard">github.com/thyomoon/obsidian-dashboard</a></li>
+    </ul>
   </div>
 </div>
 
@@ -71,9 +79,9 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="js/config.js?v=20261026d"></script>
-<script src="js/markdown.js?v=20261026d"></script>
-<script src="js/google.js?v=20261026d"></script>
-<script src="js/app.js?v=20261026d"></script>
+<script src="js/config.js?v=20261026e"></script>
+<script src="js/markdown.js?v=20261026e"></script>
+<script src="js/google.js?v=20261026e"></script>
+<script src="js/app.js?v=20261026e"></script>
 </body>
 </html>
