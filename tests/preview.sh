@@ -9,7 +9,7 @@ TMP="${TMPDIR:-/tmp}/od-preview"; rm -rf "$TMP"; mkdir -p "$TMP"
 cp -R "$ROOT/css" "$ROOT/js" "$ROOT/index.html" "$ROOT/icon.svg" "$ROOT/icon-180.png" "$TMP/"
 cp "$HERE/fake-google.js" "$TMP/js/google.js"
 sed -i '' "s|CLIENT_ID: '[^']*'|CLIENT_ID: 'demo'|" "$TMP/js/config.js"
-sed -i '' 's|<link rel="manifest" href="manifest.webmanifest">||; s|<script src="js/google.js"></script>|<script src="js/fixtures.js"></script><script src="js/google.js"></script>|' "$TMP/index.html"
+sed -i '' 's|<link rel="manifest" href="manifest.webmanifest">||; s|<script src="js/google.js[^"]*"></script>|<script src="js/fixtures.js"></script><script src="js/google.js"></script>|' "$TMP/index.html"
 python3 - "$VAULT" "$TMP/js/fixtures.js" <<'EOF'
 import json, sys, pathlib, unicodedata
 v = pathlib.Path(sys.argv[1])
@@ -41,7 +41,7 @@ cat > "$TMP/js/clicks.js" <<'JS'
   })();
 })();
 JS
-sed -i '' 's|<script src="js/app.js"></script>|<script src="js/app.js"></script><script>setTimeout(function(){var s=document.createElement("script");s.src="js/clicks.js";document.body.appendChild(s)},1200)</script>|' "$TMP/index.html"
+sed -i '' 's|<script src="js/app.js[^"]*"></script>|<script src="js/app.js"></script><script>setTimeout(function(){var s=document.createElement("script");s.src="js/clicks.js";document.body.appendChild(s)},1200)</script>|' "$TMP/index.html"
 # 폰 화면: 헤드리스 크롬은 창 최소 폭이 있어서 390px 프레임 안에 띄운다.
 cat > "$TMP/phone.html" <<'HTML'
 <!doctype html><meta charset="utf-8"><body style="margin:0"><iframe id="f" style="border:0;width:390px;height:1300px"></iframe>
