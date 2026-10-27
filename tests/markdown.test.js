@@ -121,6 +121,14 @@ ok(ih('[나쁨](javascript:alert(1))') === '[나쁨](javascript:alert(1))', 'htt
 ok(ih('CPA 공부 #CPA #SideHustle') === 'CPA 공부 <span class="tag">#CPA</span> <span class="tag">#SideHustle</span>', '태그');
 ok(ih('_자산 카드.md · 3*4 = 12') === '_자산 카드.md · 3*4 = 12', '밑줄 · 곱하기는 그대로');
 
+// 「한 일」로 옮긴 할 일의 출처 표시
+ok(MD.splitOrigin('FAR 2장 (10/25 남은 일)').text === 'FAR 2장' && MD.splitOrigin('FAR 2장 (10/25 남은 일)').md === '10/25', '출처 표시를 떼어 읽는다');
+ok(MD.splitOrigin('그냥 할 일').md === null, '출처 표시가 없으면 null');
+let mv = '## 한 일\n- 뭔가 했다\n\n## 남은 일\n- [ ] 이거\n- [ ] 저거\n';
+let mt = MD.parseLog(mv).tasks[0];
+mv = MD.appendToSection(MD.editBullet(mv, mt, null), '한 일', '- [x] 이거');
+ok(mv === '## 한 일\n- 뭔가 했다\n- [x] 이거\n\n## 남은 일\n- [ ] 저거\n', '같은 파일 안에서 남은 일 → 한 일로 옮긴다');
+
 ok(MD.display('[[CT]]와 [[a|별칭]] `code`') === 'CT와 별칭 code', '위키링크 표시');
 
 print(fails ? fails + '개 실패' : '모두 통과');

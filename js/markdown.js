@@ -324,6 +324,14 @@
     }).join('');
   }
 
-  const api = { inlineHtml, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
+  // 끝낸 할 일을 「한 일」로 옮길 때 붙이는 출처 표시: 「… (10/25 남은 일)」
+  const ORIGIN = /\s*\((\d{1,2})\/(\d{1,2}) 남은 일\)\s*$/;
+  function splitOrigin(text) {
+    const m = String(text).match(ORIGIN);
+    if (!m) return { text: String(text), md: null };
+    return { text: String(text).slice(0, m.index), md: m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') };
+  }
+
+  const api = { inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);

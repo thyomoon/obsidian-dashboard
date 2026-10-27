@@ -20,7 +20,7 @@
     showDone: false, kind: 'todo', tab: 'home',
     openDate: null, selDate: null, month: null,
     todayEvents: null, monthEvents: null, eventsError: false,
-    busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null
+    busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null, editWhere: null
   };
 
   // ---------- 날짜 (샌프란시스코 현지 시각) ----------
@@ -178,15 +178,51 @@
     try { return await creating; } finally { creating = null; }
   }
 
+  // 「남은 일」의 할 일을 체크하면 오늘 로그 「한 일」로 옮긴다(지난 날짜면 「(MM/DD 남은 일)」을 붙여서).
+  // 「한 일」의 끝낸 할 일을 풀면 원래 날짜의 「남은 일」로 돌려보낸다. 다른 칸의 체크박스는 그 자리에서 체크만.
   async function toggle(logId, line) {
     const p = S.files[logId] && S.files[logId].parsed;
     const task = p && p.tasks.find((t) => t.line === line);
     if (!task) return;
     const key = logId + ':' + line;
     S.busy.add(key); renderTodos(); renderLogs();
-    try { await mutate(logId, (text) => MD.toggleTask(text, task)); }
+    try {
+      if (!task.done && task.section === '남은 일') await completeTask(logId, task);
+      else if (task.done && task.section === '한 일') await reopenTask(logId, task);
+      else await mutate(logId, (text) => MD.toggleTask(text, task));
+    }
     catch (e) { fail(e); }
     finally { S.busy.delete(key); renderAll(); }
+  }
+
+  const DONE_BEFORE = ['내가 내린 결정', '남은 일', '새로운 아이디어', '만들거나 바꾼 파일', '오늘의 일기'];
+
+  // 다른 파일로 옮길 때는 먼저 더하고 그다음 뺀다 — 중간에 실패해도 할 일이 사라지지 않게(겹칠 수는 있다).
+  async function moveTask(fromId, task, toId, sec, line, before) {
+    if (fromId === toId) return mutate(fromId, (t) => MD.appendToSection(MD.editBullet(t, task, null), sec, line, before), true);
+    await mutate(toId, (t) => MD.appendToSection(t, sec, line, before), true);
+    await mutate(fromId, (t) => MD.editBullet(t, task, null));
+  }
+
+  async function completeTask(logId, task) {
+    const from = S.logs.find((l) => l.id === logId);
+    const toId = await ensureToday();
+    const tag = from.date === S.today ? '' : ' (' + md(from.date) + ' 남은 일)';
+    await moveTask(logId, task, toId, '한 일', '- [x] ' + task.text + tag, DONE_BEFORE);
+    toast('오늘 「한 일」로 옮겼어요.');
+  }
+
+  async function reopenTask(logId, task) {
+    const here = S.logs.find((l) => l.id === logId);
+    const o = MD.splitOrigin(task.text);
+    let date = here.date;
+    if (o.md) {
+      date = here.date.slice(0, 4) + '-' + o.md.replace('/', '-');
+      if (date > here.date) date = (Number(here.date.slice(0, 4)) - 1) + date.slice(4);
+    }
+    const target = logByDate(date);
+    await moveTask(logId, task, target ? target.id : logId, '남은 일', '- [ ] ' + o.text, LISTS['남은 일'].before);
+    toast(md(target ? date : here.date) + ' 「남은 일」로 돌려보냈어요.');
   }
 
   // 로그 상세에서 고치고 지우고 더할 수 있는 목록 칸. before: 칸이 없을 때 그 앞에 만든다.
@@ -203,7 +239,7 @@
     if (!p) return null;
     for (const sec of p.sections) {
       const it = sec.items.find((x) => x.line === line);
-      if (it) return { id, it, word: LISTS[sec.name] ? LISTS[sec.name].word : '항목' };
+      if (it) return { id, it, word: it.kind === 'task' ? '할 일' : (LISTS[sec.name] ? LISTS[sec.name].word : '항목') };
     }
     return null;
   }
@@ -213,7 +249,7 @@
     const r = itemRef(key);
     S.editItem = null;
     if (!r) { renderLogs(); return; }
-    S.busy.add(key); renderLogs();
+    S.busy.add(key); renderTodos(); renderLogs();
     try {
       await mutate(r.id, (t) => MD.editBullet(t, r.it, newText), newText != null);
       toast(r.word + (newText == null ? '을 지웠어요.' : '을 고쳤어요.'));
@@ -316,9 +352,11 @@
     const list = S.showDone ? all : open;
     const rows = list.map(({ log, t }) => {
       const key = log.id + ':' + t.line;
+      if (S.editItem === key && S.editWhere === 'todos') return '<div class="todo editing">' + editFormHtml(key, t.text, '할 일') + '</div>';
       return '<div class="todo' + (t.done ? ' done' : '') + (S.busy.has(key) ? ' busy' : '') + '">' +
         '<label><input type="checkbox" data-toggle="' + h(log.id) + '" data-line="' + t.line + '"' + (t.done ? ' checked' : '') + (S.busy.has(key) ? ' disabled' : '') + '>' +
         '<span class="txt" style="padding-left:' + Math.min(t.indent, 8) * 4 + 'px">' + show(t.text) + (t.by === 'claude' ? ' <span class="who">Claude</span>' : '') + '</span></label>' +
+        itemButtons(key, '할 일') +
         '<button type="button" class="chip' + (log.date === S.today ? ' today' : '') + '" data-open="' + log.date + '" title="' + h(log.date) + ' 데일리 로그 보기">' + md(log.date) + ICON.out + '</button>' +
         '</div>';
     }).join('');
@@ -439,6 +477,17 @@
     return '<label class="tk' + (it.done ? ' done' : '') + '"' + pad + '><input type="checkbox" data-toggle="' + h(l.id) + '" data-line="' + it.line + '"' + (it.done ? ' checked' : '') + (busy ? ' disabled' : '') + '><span>' + show(it.text) + '</span></label>';
   }
 
+  // 고치기 · 지우기 버튼과 고치는 입력칸(할 일 목록과 로그 상세가 같이 쓴다).
+  function itemButtons(key, word) {
+    return '<button type="button" class="icon-btn sm" data-item-edit="' + h(key) + '" aria-label="이 ' + word + ' 고치기">' + ICON.edit + '</button>' +
+      '<button type="button" class="icon-btn sm" data-item-del="' + h(key) + '" aria-label="이 ' + word + ' 지우기">' + ICON.trash + '</button>';
+  }
+  function editFormHtml(key, text, word, pad) {
+    return '<form class="item-edit" data-item-save="' + h(key) + '"' + (pad || '') + '><label for="item-edit-input" class="sr-only">' + word + ' 고치기</label>' +
+      '<input class="field" id="item-edit-input" type="text" value="' + h(text) + '" data-item-input enterkeyhint="done">' +
+      '<button class="btn primary" type="submit">저장</button><button class="btn" type="button" data-item-cancel>취소</button></form>';
+  }
+
   // 남은 일 · 새로운 아이디어: 어느 날짜든 고치기 · 지우기 · 더하기.
   function listSecHtml(s, l, date) {
     const L = LISTS[s.name];
@@ -447,13 +496,8 @@
       if (it.kind === 'callout') return it.type === 'claude' ? byClaude(it) : '';
       const key = l.id + ':' + it.line;
       const pad = it.depth ? ' style="margin-left:' + it.depth * 20 + 'px"' : '';
-      if (S.editItem === key) {
-        return '<form class="item-edit" data-item-save="' + h(key) + '"' + pad + '><label for="item-edit-input" class="sr-only">' + L.word + ' 고치기</label>' +
-          '<input class="field" id="item-edit-input" type="text" value="' + h(it.text) + '" data-item-input enterkeyhint="done">' +
-          '<button class="btn primary" type="submit">저장</button><button class="btn" type="button" data-item-cancel>취소</button></form>';
-      }
-      const buttons = '<button type="button" class="icon-btn sm" data-item-edit="' + h(key) + '" aria-label="이 ' + L.word + ' 고치기">' + ICON.edit + '</button>' +
-        '<button type="button" class="icon-btn sm" data-item-del="' + h(key) + '" aria-label="이 ' + L.word + ' 지우기">' + ICON.trash + '</button>';
+      if (S.editItem === key && S.editWhere === 'logs') return editFormHtml(key, it.text, L.word, pad);
+      const buttons = itemButtons(key, L.word);
       const busy = S.busy.has(key);
       if (it.kind === 'task') {
         return '<div class="tk-row' + (busy ? ' busy' : '') + '"' + pad + '><label class="tk' + (it.done ? ' done' : '') + '">' +
@@ -526,13 +570,14 @@
       if (t.dataset.kind) { S.kind = t.dataset.kind; renderHeader(); $('#quick-input').focus(); }
       else if (t.dataset.done) { S.showDone = t.dataset.done === '1'; renderTodos(); }
       else if (t.dataset.open) openLog(t.dataset.open);
-      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.editItem = null; renderLogs(); }
+      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.editItem = null; renderTodos(); renderLogs(); }
       else if (t.dataset.itemEdit) {
-        S.editItem = t.dataset.itemEdit; renderLogs();
+        S.editItem = t.dataset.itemEdit; S.editWhere = t.closest('#todos') ? 'todos' : 'logs';
+        renderTodos(); renderLogs();
         const inp = $('#item-edit-input');
         if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
       }
-      else if ('itemCancel' in t.dataset) { S.editItem = null; renderLogs(); }
+      else if ('itemCancel' in t.dataset) { S.editItem = null; renderTodos(); renderLogs(); }
       else if (t.dataset.itemDel) {
         const r = itemRef(t.dataset.itemDel);
         if (r && window.confirm('이 ' + r.word + '을 지울까요?')) changeItem(t.dataset.itemDel, null);
@@ -566,7 +611,7 @@
         e.preventDefault();
         const r = itemRef(f.dataset.itemSave);
         const v = f.querySelector('input').value.replace(/\s+/g, ' ').trim();
-        if (!r || v === r.it.text) { S.editItem = null; renderLogs(); return; }
+        if (!r || v === r.it.text) { S.editItem = null; renderTodos(); renderLogs(); return; }
         if (!v) { if (window.confirm('비워 두면 이 ' + r.word + '을 지워요. 지울까요?')) changeItem(f.dataset.itemSave, null); return; }
         changeItem(f.dataset.itemSave, v);
       } else if (f.dataset.itemAdd) {
@@ -578,7 +623,7 @@
       }
     });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-item-input]')) { S.editItem = null; renderLogs(); }
+      if (e.key === 'Escape' && e.target.matches && e.target.matches('[data-item-input]')) { S.editItem = null; renderTodos(); renderLogs(); }
     });
     $('#quick').addEventListener('submit', async (e) => {
       e.preventDefault();

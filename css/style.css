@@ -116,6 +116,10 @@ h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
   flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 0; border-radius: 999px;
   background: var(--chip); color: var(--chip-ink); font-family: var(--mono); font-size: 12px; cursor: pointer;
 }
+.todo .icon-btn.sm { width: 36px; height: 36px; color: var(--muted); flex: 0 0 auto; }
+.todo .icon-btn.sm:hover { background: var(--ground); color: var(--ink); }
+.todo.editing { padding: 6px 0; }
+.todo.editing .item-edit { flex: 1 1 auto; }
 .chip.today { background: var(--accent-soft); color: var(--accent-soft-ink); }
 .chip svg { width: 12px; height: 12px; }
 .empty { color: var(--muted); font-size: 14px; padding: 12px 2px; }
@@ -246,6 +250,10 @@ strong { font-weight: 600; }
   .quick .add svg { display: block; }
   .quick .add span { display: none; }
   .todo-list { max-height: none; }
+  /* 폰: 할 일 글은 한 줄을 다 쓰고, 고치기 · 지우기 · 날짜는 그 아래 오른쪽에 */
+  .todo { flex-wrap: wrap; gap: 0 4px; padding-bottom: 6px; }
+  .todo label { flex-basis: 100%; padding-bottom: 2px; }
+  .todo > .icon-btn.sm:first-of-type { margin-left: auto; }
   .log-row { flex-wrap: wrap; gap: 6px 12px; }
   .log-row .when { flex-direction: row; gap: 6px; align-items: baseline; flex: 1 1 auto; }
   .log-row .line { order: 3; flex-basis: 100%; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
