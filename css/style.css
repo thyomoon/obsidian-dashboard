@@ -178,6 +178,11 @@ h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 .field { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; height: 44px; font-size: 16px; background: var(--card); }
 textarea.field { height: auto; min-height: 220px; padding: 12px 14px; line-height: 1.75; resize: vertical; }
 .hint { font-size: 13px; color: var(--muted); }
+/* 줄 안의 마크다운 */
+code { font-family: var(--mono); font-size: .88em; background: var(--chip); color: var(--chip-ink); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.wl { color: var(--accent-soft-ink); border-bottom: 1px dotted currentColor; }
+.tag { color: var(--idea); font-weight: 500; }
+strong { font-weight: 600; }
 /* Claude가 쓴 덩어리(> [!claude] 콜아웃) */
 .by-claude { margin-top: 6px; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .by-claude::before { content: ''; width: 8px; height: 8px; border-radius: 2px; background: var(--muted); opacity: .6; }

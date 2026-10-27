@@ -44,7 +44,7 @@
 
   // ---------- 공통 ----------
   const h = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const show = (s) => h(MD.display(s));
+  const show = (s) => MD.inlineHtml(s);
   let toastTimer = null;
   function toast(msg) {
     const t = $('#toast');

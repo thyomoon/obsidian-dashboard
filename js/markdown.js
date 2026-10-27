@@ -305,6 +305,25 @@
       .replace(/`([^`]+)`/g, '$1');
   }
 
-  const api = { parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
+  // 화면 표시용 HTML: 먼저 전부 이스케이프하고, 줄 안의 마크다운만 꾸민다.
+  // `코드` · **굵게** · *기울임* · ~~취소~~ · [[링크|별칭]] · [글](https://…) · #태그
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+  function inlineHtml(s) {
+    return String(s).split(/(`[^`]+`)/).map((part, i) => {
+      if (i % 2) return '<code>' + esc(part.slice(1, -1)) + '</code>';
+      return esc(part)
+        .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '<span class="wl">$2</span>')
+        .replace(/\[\[([^\]]+)\]\]/g, '<span class="wl">$1</span>')
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+        .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?![*\w])/g, '$1<em>$2</em>')
+        .replace(/(^|\s)#([\p{L}\p{N}_\/-]+)/gu, '$1<span class="tag">#$2</span>');
+    }).join('');
+  }
+
+  const api = { inlineHtml, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);

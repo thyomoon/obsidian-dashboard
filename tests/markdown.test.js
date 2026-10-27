@@ -110,6 +110,17 @@ ok(MD.addAuthor(fm('author:\n  - Claude'), 'Taylor') === fm('author: [Claude, Ta
 ok(MD.addAuthor(fm('author: [Taylor, Claude]'), 'Taylor') === fm('author: [Taylor, Claude]'), '이미 있으면 그대로');
 ok(MD.addAuthor('---\ntype: x\n---\n', 'Taylor') === '---\ntype: x\nauthor: [Taylor]\n---\n', 'author 칸이 없으면 만든다');
 
+// 화면 표시 HTML
+const ih = MD.inlineHtml;
+ok(ih('<script>alert(1)</script>') === '&lt;script&gt;alert(1)&lt;/script&gt;', 'HTML은 실행되지 않게 이스케이프');
+ok(ih('**굵게** 와 `a<b>` 코드') === '<strong>굵게</strong> 와 <code>a&lt;b&gt;</code> 코드', '굵게 · 코드');
+ok(ih('`**안 굵게**`') === '<code>**안 굵게**</code>', '코드 안은 꾸미지 않는다');
+ok(ih('[[CT]]와 [[a|별칭]]') === '<span class="wl">CT</span>와 <span class="wl">별칭</span>', '위키링크');
+ok(ih('[문서](https://x.com/a?b=1&c=2)') === '<a href="https://x.com/a?b=1&amp;c=2" target="_blank" rel="noopener">문서</a>', '외부 링크');
+ok(ih('[나쁨](javascript:alert(1))') === '[나쁨](javascript:alert(1))', 'http(s)가 아닌 링크는 링크로 만들지 않는다');
+ok(ih('CPA 공부 #CPA #SideHustle') === 'CPA 공부 <span class="tag">#CPA</span> <span class="tag">#SideHustle</span>', '태그');
+ok(ih('_자산 카드.md · 3*4 = 12') === '_자산 카드.md · 3*4 = 12', '밑줄 · 곱하기는 그대로');
+
 ok(MD.display('[[CT]]와 [[a|별칭]] `code`') === 'CT와 별칭 code', '위키링크 표시');
 
 print(fails ? fails + '개 실패' : '모두 통과');
