@@ -1,5 +1,5 @@
 // 구글 로그인 · 드라이브 · 캘린더. 서버 없이 브라우저에서 바로 구글 API를 부른다.
-// 쓰기는 데일리 로그 폴더 안의 파일에만 허용한다(writable 목록에 없는 파일은 거절).
+// 쓰기는 데일리 로그 · Meetings 폴더 안의 파일에만 허용한다(writable 목록에 없는 파일은 거절).
 (function () {
   'use strict';
   const C = window.CONFIG;
@@ -93,16 +93,23 @@
 
   const writable = new Set();
   let logFolderId = null;
+  let meetingFolderId = null;
 
   async function findLogFolder() {
     const cached = store.get('od.folders');
-    if (cached && cached.client === C.CLIENT_ID) { logFolderId = cached.logs; return cached; }
+    if (cached && cached.client === C.CLIENT_ID && 'meetings' in cached) {
+      logFolderId = cached.logs; meetingFolderId = cached.meetings; return cached;
+    }
     const vault = await childPath('root', C.VAULT_PATH, false);
     const logs = await childPath(vault, C.LOG_PATH, false);
     const template = await childPath(vault, C.TEMPLATE_PATH, true);
-    const f = { client: C.CLIENT_ID, vault, logs, template };
+    // Meetings 폴더는 없어도 된다 — 없으면 미팅 할 일만 빠진다.
+    let meetings = null;
+    try { meetings = await childPath(vault, C.MEETINGS_PATH, false); }
+    catch (e) { if (e instanceof AuthError) throw e; }
+    const f = { client: C.CLIENT_ID, vault, logs, template, meetings };
     store.set('od.folders', f);
-    logFolderId = logs;
+    logFolderId = logs; meetingFolderId = meetings;
     return f;
   }
 
@@ -122,6 +129,22 @@
       .map((f) => Object.assign(f, { date: f.name.slice(0, 10) }));
     logs.forEach((f) => writable.add(f.id));
     return logs;
+  }
+
+  // 미팅 노트: 「YYYY-MM-DD HHmm_주제.md」. readme.md는 뺀다.
+  async function listMeetings() {
+    if (!meetingFolderId) return [];
+    const files = await list("'" + esc(meetingFolderId) + "' in parents and trashed=false and mimeType!='" + FOLDER + "'", 'id,name,modifiedTime');
+    const out = files
+      .map((f) => ({ id: f.id, name: nfc(f.name), modifiedTime: f.modifiedTime }))
+      .filter((f) => /\.md$/.test(f.name) && f.name.toLowerCase() !== 'readme.md')
+      .map((f) => {
+        const title = f.name.replace(/\.md$/, '');
+        const d = title.match(/^\d{4}-\d{2}-\d{2}/);
+        return Object.assign(f, { title, date: d ? d[0] : '', meeting: true });
+      });
+    out.forEach((f) => writable.add(f.id));
+    return out;
   }
 
   async function meta(id) {
@@ -178,5 +201,5 @@
     return [].concat(...all).sort((a, b) => (a.start < b.start ? -1 : 1));
   }
 
-  window.G = { login, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, meta, readText, writeText, createLog, events };
+  window.G = { login, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, meta, readText, writeText, createLog, events };
 })();

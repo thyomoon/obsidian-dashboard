@@ -270,3 +270,5 @@ strong { font-weight: 600; }
   .tabbar button[aria-pressed="true"]::before { background: var(--accent); }
   .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
 }
+a.chip { text-decoration: none; }
+.chip.meet { background: var(--idea-soft); color: var(--idea-soft-ink); }

@@ -16,6 +16,7 @@
   const S = {
     today: '', folders: null,
     logs: [],          // [{id, name, date, modifiedTime}] 날짜 내림차순
+    meetings: [],      // [{id, name, title, date, modifiedTime, meeting: true}] Meetings 폴더의 미팅 노트
     files: {},         // id → {text, modifiedTime, parsed}
     showDone: false, kind: 'todo', tab: 'home',
     openDate: null, selDate: null, month: null,
@@ -64,8 +65,8 @@
   }
   const logByDate = (d) => S.logs.find((l) => l.date === d) || null;
   const parsedOf = (l) => (l && S.files[l.id] ? S.files[l.id].parsed : null);
-  function obsidianUrl(date) {
-    const file = C.VAULT_PATH.slice(1).concat(C.LOG_PATH).join('/') + '/' + date;
+  function obsidianUrl(date, path) {
+    const file = C.VAULT_PATH.slice(1).concat(path || C.LOG_PATH).join('/') + '/' + date;
     return 'obsidian://open?vault=' + encodeURIComponent(C.OBSIDIAN_VAULT) + '&file=' + encodeURIComponent(file);
   }
 
@@ -79,7 +80,7 @@
   }
   function putFile(id, text, modifiedTime) {
     S.files[id] = { text, modifiedTime, parsed: MD.parseLog(text) };
-    const l = S.logs.find((x) => x.id === id);
+    const l = S.logs.find((x) => x.id === id) || S.meetings.find((x) => x.id === id);
     if (l) l.modifiedTime = modifiedTime;
   }
 
@@ -92,14 +93,16 @@
       G.forgetFolders(); S.folders = await G.findLogFolder();
     }
     const logs = (await G.listLogs()).sort((a, b) => (a.date < b.date ? 1 : -1));
+    const meetings = (await G.listMeetings()).sort((a, b) => (a.name < b.name ? 1 : -1));
     const cache = loadCache();
-    await Promise.all(logs.map(async (l) => {
+    await Promise.all(logs.concat(meetings).map(async (l) => {
       const have = S.files[l.id] || cache[l.id];
       if (have && have.modifiedTime === l.modifiedTime) { putFile(l.id, have.text, l.modifiedTime); return; }
       putFile(l.id, await G.readText(l.id), l.modifiedTime);
     }));
     S.logs = logs;
-    Object.keys(S.files).forEach((id) => { if (!logs.some((l) => l.id === id)) delete S.files[id]; });
+    S.meetings = meetings;
+    Object.keys(S.files).forEach((id) => { if (!logs.some((l) => l.id === id) && !meetings.some((m) => m.id === id)) delete S.files[id]; });
     saveCache();
     S.lastLoad = Date.now();
     setStatus('ok', '구글 드라이브 연결됨');
@@ -195,7 +198,7 @@
     finally { S.busy.delete(key); renderAll(); }
   }
 
-  const DONE_BEFORE = ['내가 내린 결정', '남은 일', '새로운 아이디어', '만들거나 바꾼 파일', '오늘의 일기'];
+  const DONE_BEFORE = ['내가 내린 결정', '남은 일', '새로운 아이디어', '오늘의 일기'];
 
   // 다른 파일로 옮길 때는 먼저 더하고 그다음 뺀다 — 중간에 실패해도 할 일이 사라지지 않게(겹칠 수는 있다).
   async function moveTask(fromId, task, toId, sec, line, before) {
@@ -227,8 +230,8 @@
 
   // 로그 상세에서 고치고 지우고 더할 수 있는 목록 칸. before: 칸이 없을 때 그 앞에 만든다.
   const LISTS = {
-    '남은 일': { word: '할 일', line: (v) => '- [ ] ' + v, before: ['새로운 아이디어', '만들거나 바꾼 파일', '오늘의 일기'] },
-    '새로운 아이디어': { word: '아이디어', line: (v) => '- ' + v, before: ['만들거나 바꾼 파일', '오늘의 일기'] }
+    '남은 일': { word: '할 일', line: (v) => '- [ ] ' + v, before: ['새로운 아이디어', '오늘의 일기'] },
+    '새로운 아이디어': { word: '아이디어', line: (v) => '- ' + v, before: ['오늘의 일기'] }
   };
 
   function itemRef(key) {
@@ -325,13 +328,24 @@
   function setSave(t) { S.saveLabel = t; const el = $('#save-label'); if (el) el.textContent = t; }
 
   // ---------- 그리기 ----------
+  // 데일리 로그와 미팅 노트의 체크박스를 날짜 내림차순으로. 미팅 할 일은 그 노트 안에서 체크된다(toggle의 else).
   function allTasks() {
     const out = [];
-    S.logs.forEach((l) => {
-      const p = parsedOf(l);
-      if (p) p.tasks.forEach((t) => out.push({ log: l, t }));
-    });
+    S.logs.concat(S.meetings)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
+      .forEach((l) => {
+        const p = parsedOf(l);
+        if (p) p.tasks.forEach((t) => out.push({ log: l, t }));
+      });
     return out;
+  }
+
+  function sourceChip(log) {
+    if (log.meeting) {
+      return '<a class="chip meet" href="' + h(obsidianUrl(log.title, C.MEETINGS_PATH)) + '" title="' + h(log.title) + ' — 옵시디언에서 열기">미팅' +
+        (log.date ? ' ' + md(log.date) : '') + ICON.out + '</a>';
+    }
+    return '<button type="button" class="chip' + (log.date === S.today ? ' today' : '') + '" data-open="' + log.date + '" title="' + h(log.date) + ' 데일리 로그 보기">' + md(log.date) + ICON.out + '</button>';
   }
 
   function renderHeader() {
@@ -357,7 +371,7 @@
         '<label><input type="checkbox" data-toggle="' + h(log.id) + '" data-line="' + t.line + '"' + (t.done ? ' checked' : '') + (S.busy.has(key) ? ' disabled' : '') + '>' +
         '<span class="txt" style="padding-left:' + Math.min(t.indent, 8) * 4 + 'px">' + show(t.text) + (t.by === 'claude' ? ' <span class="who">Claude</span>' : '') + '</span></label>' +
         itemButtons(key, '할 일') +
-        '<button type="button" class="chip' + (log.date === S.today ? ' today' : '') + '" data-open="' + log.date + '" title="' + h(log.date) + ' 데일리 로그 보기">' + md(log.date) + ICON.out + '</button>' +
+        sourceChip(log) +
         '</div>';
     }).join('');
     $('#todos').innerHTML =
