@@ -19,7 +19,7 @@
     meetings: [],      // [{id, name, title, date, modifiedTime, meeting: true}] Meetings 폴더의 미팅 노트
     files: {},         // id → {text, modifiedTime, parsed}
     showDone: false, kind: 'todo', tab: 'home',
-    openDate: null, selDate: null, month: null,
+    openDate: null, showList: false, selDate: null, month: null,
     todayEvents: null, monthEvents: null, eventsError: false,
     busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null, editWhere: null
   };
@@ -402,16 +402,17 @@
     $('#events').innerHTML = '<div class="card-head"><h2 id="events-h">오늘 일정</h2><span class="sub">구글 캘린더</span></div>' + body;
   }
 
+  // 기본은 로그 한 장(열어 둔 날, 없으면 오늘). 「전체 로그」를 누르면 있는 로그 전부를 날짜 내림차순 목록으로.
   function renderLogs() {
     const el = $('#logs');
-    if (S.openDate) { el.innerHTML = detailHtml(S.openDate); return; }
+    if (!S.showList) { el.innerHTML = detailHtml(S.openDate || S.today); return; }
     const rows = [];
-    for (let i = 0; i < 7; i++) {
-      const d = addDays(S.today, -i);
+    const dates = S.logs.map((l) => l.date);
+    if (!dates.includes(S.today)) dates.unshift(S.today);
+    for (const d of dates) {
       const l = logByDate(d);
       const p = parsedOf(l);
       const isToday = d === S.today;
-      if (!p && !isToday) { rows.push('<div class="log-missing"><b>' + md(d) + '</b>' + WD[weekday(d)] + ' · 기록 없음</div>'); continue; }
       const openN = p ? p.tasks.filter((t) => !t.done).length : 0;
       const ideaN = p ? p.ideas.length : 0;
       let line = p && p.oneLine ? p.oneLine.split('\n')[0] : '';
@@ -424,7 +425,8 @@
         '<span class="badges"><span class="badge' + (openN ? '' : ' zero') + '">할 일 ' + openN + '</span><span class="badge idea' + (ideaN ? '' : ' zero') + '">아이디어 ' + ideaN + '</span></span>' +
         ICON.right + '</button>');
     }
-    el.innerHTML = '<div class="card-head"><h2 id="logs-h">데일리 로그 · 최근 7일</h2><span class="sub">누르면 로그 전체</span></div><div>' + rows.join('') + '</div>';
+    el.innerHTML = '<div class="card-head"><h2 id="logs-h">데일리 로그 · 전체 ' + S.logs.length + '개</h2>' +
+      '<button type="button" class="btn" data-open="' + S.today + '">오늘 로그</button></div><div>' + rows.join('') + '</div>';
   }
 
   function detailHtml(date) {
@@ -442,7 +444,8 @@
     });
     const body = secs.map((s) => secHtml(s, l, isToday, date)).filter(Boolean).join('');
     return '<div class="detail">' +
-      '<div class="detail-top"><button type="button" class="btn" data-back>' + ICON.left + '최근 7일</button>' +
+      '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-back>' + ICON.left + '전체 로그</button>' +
+      (isToday ? '' : '<button type="button" class="btn" data-open="' + S.today + '">오늘</button>') + '</span>' +
       '<div class="meta">' + (isToday ? '<span id="save-label">' + h(S.saveLabel || (l ? '' : '아직 파일 없음')) + '</span>' : '') +
       (l ? '<a href="' + h(obsidianUrl(date)) + '">옵시디언에서 열기</a>' : '') + '</div></div>' +
       '<h2 class="big" id="logs-h">' + kor(date) + (isToday ? ' · 오늘' : '') + '</h2>' +
@@ -572,7 +575,7 @@
   // ---------- 조작 ----------
   function openLog(date) {
     flushFields();
-    S.openDate = date; S.tab = 'log';
+    S.openDate = date; S.showList = false; S.tab = 'log';
     renderHeader(); renderLogs();
     $('#logs').scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
@@ -584,7 +587,7 @@
       if (t.dataset.kind) { S.kind = t.dataset.kind; renderHeader(); $('#quick-input').focus(); }
       else if (t.dataset.done) { S.showDone = t.dataset.done === '1'; renderTodos(); }
       else if (t.dataset.open) openLog(t.dataset.open);
-      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.editItem = null; renderTodos(); renderLogs(); }
+      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.showList = true; S.editItem = null; renderTodos(); renderLogs(); }
       else if (t.dataset.itemEdit) {
         S.editItem = t.dataset.itemEdit; S.editWhere = t.closest('#todos') ? 'todos' : 'logs';
         renderTodos(); renderLogs();

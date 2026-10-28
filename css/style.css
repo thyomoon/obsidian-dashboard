@@ -272,3 +272,4 @@ strong { font-weight: 600; }
 }
 a.chip { text-decoration: none; }
 .chip.meet { background: var(--idea-soft); color: var(--idea-soft-ink); }
+.detail-top .nav { display: flex; gap: 8px; flex-wrap: wrap; }
