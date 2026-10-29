@@ -175,10 +175,9 @@ h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
 .tk-row.plain .t { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; padding-left: 4px; }
 .tk-row .icon-btn.sm { color: var(--muted); }
 .tk-row.busy { opacity: .55; }
-.item-add, .item-edit { display: flex; gap: 8px; align-items: center; }
-.item-add { margin-top: 4px; }
+.item-edit { display: flex; gap: 8px; align-items: center; }
 .item-edit { padding: 4px 0; }
-.item-add .field, .item-edit .field { flex: 1 1 auto; min-width: 0; }
+.item-edit .field { flex: 1 1 auto; min-width: 0; }
 .field { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 0 14px; height: 44px; font-size: 16px; background: var(--card); }
 textarea.field { height: auto; min-height: 220px; padding: 12px 14px; line-height: 1.75; resize: vertical; }
 .hint { font-size: 13px; color: var(--muted); }
@@ -216,6 +215,15 @@ strong { font-weight: 600; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .legend i.evm { border-radius: 1px; background: var(--idea); }
+.day .m.mtm, .legend i.mtm { background: transparent; border: 1.5px solid var(--idea-soft-ink); box-sizing: border-box; }
+.day.today .m.mtm { background: transparent; border-color: var(--accent-ink); }
+.day-sum .hd.sub { margin-top: 6px; }
+.meet-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--idea-soft); color: var(--idea-soft-ink); text-decoration: none; }
+.meet-row .mono { color: inherit; opacity: .8; margin: 0; }
+.meet-row .mt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.meet-row .mt b { font-weight: 600; overflow-wrap: anywhere; }
+.meet-row small { font-size: 12px; opacity: .8; }
+.meet-row svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; }
 .day-sum { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .day-sum .mono { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-right: 6px; }
 .day-sum .hd { font-size: 12px; font-weight: 600; color: var(--muted); }

@@ -79,7 +79,7 @@
     try { localStorage.setItem(CACHE, JSON.stringify(c)); } catch (e) { /* 용량이 차도 동작은 한다 */ }
   }
   function putFile(id, text, modifiedTime) {
-    S.files[id] = { text, modifiedTime, parsed: MD.parseLog(text) };
+    S.files[id] = { text, modifiedTime, parsed: MD.parseLog(text), fm: MD.frontmatter(text) };
     const l = S.logs.find((x) => x.id === id) || S.meetings.find((x) => x.id === id);
     if (l) l.modifiedTime = modifiedTime;
   }
@@ -260,21 +260,6 @@
     finally { S.busy.delete(key); renderAll(); }
   }
 
-  async function addItem(secName, date, value) {
-    const v = value.replace(/\s+/g, ' ').trim();
-    const L = LISTS[secName];
-    if (!v || !L) return;
-    try {
-      const id = date === S.today ? await ensureToday() : (logByDate(date) || {}).id;
-      if (!id) return;
-      await mutate(id, (t) => MD.appendToSection(t, secName, L.line(v), L.before), true);
-      renderAll();
-      const inp = document.getElementById(addInputId(secName, date));
-      if (inp) inp.focus();
-    } catch (e) { fail(e); }
-  }
-  const addInputId = (secName, date) => (secName === '남은 일' ? 'task' : 'idea') + '-add-' + date;
-
   async function quickAdd(value) {
     const v = value.replace(/\s+/g, ' ').trim();
     if (!v) return false;
@@ -339,6 +324,23 @@
       });
     return out;
   }
+
+  // 미팅의 날짜 · 시각은 meeting_at이 먼저, 없으면 파일 이름(YYYY-MM-DD HHmm_주제)에서.
+  function meetingInfo(m) {
+    const fm = (S.files[m.id] && S.files[m.id].fm) || {};
+    const at = typeof fm.meeting_at === 'string' ? fm.meeting_at.match(/^(\d{4}-\d{2}-\d{2})(?:T(\d{2}:\d{2}))?/) : null;
+    const nm = m.title.match(/^(\d{4}-\d{2}-\d{2})(?: (\d{2})(\d{2}))?_?\s*(.*)$/);
+    const p = parsedOf(m);
+    return {
+      date: at ? at[1] : m.date,
+      time: at && at[2] ? at[2] : nm && nm[2] ? nm[2] + ':' + nm[3] : '',
+      topic: (nm && nm[4]) || m.title,
+      who: Array.isArray(fm.attendees) ? fm.attendees : [],
+      open: p ? p.tasks.filter((t) => !t.done).length : 0
+    };
+  }
+  const meetingsOn = (date) => S.meetings.map((m) => Object.assign({ m }, meetingInfo(m))).filter((x) => x.date === date)
+    .sort((a, b) => (a.time < b.time ? -1 : 1));
 
   function sourceChip(log) {
     if (log.meeting) {
@@ -436,13 +438,7 @@
     let secs = p ? p.sections.slice() : [];
     if (isToday && !p) secs = ['내 한 줄', '남은 일', '새로운 아이디어', '오늘의 일기'].map((name) => ({ name, text: '', isList: false, items: [] }));
     if (isToday) EDITABLE.forEach((n) => { if (!secs.some((s) => s.name === n)) secs.push({ name: n, text: '', isList: false, items: [] }); });
-    // 칸이 없는 옛 로그에도 남은 일 · 아이디어 칸을 보여서 더할 수 있게 한다(처음 넣을 때 파일에 칸이 생긴다).
-    if (p) Object.keys(LISTS).forEach((name) => {
-      if (secs.some((s) => s.name === name)) return;
-      const at = secs.findIndex((s) => LISTS[name].before.includes(s.name));
-      secs.splice(at < 0 ? secs.length : at, 0, { name, text: '', isList: false, items: [] });
-    });
-    const body = secs.map((s) => secHtml(s, l, isToday, date)).filter(Boolean).join('');
+    const body = secs.map((s) => secHtml(s, l, isToday)).filter(Boolean).join('');
     return '<div class="detail">' +
       '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-back>' + ICON.left + '전체 로그</button>' +
       (isToday ? '' : '<button type="button" class="btn" data-open="' + S.today + '">오늘</button>') + '</span>' +
@@ -454,10 +450,12 @@
       body + '</div>';
   }
 
+  // 로그에서 쓰는 칸은 오늘의 「내 한 줄」 · 「오늘의 일기」뿐. 할 일 · 아이디어는 위 빠른 입력으로만 더하고,
+  // 할 일 고치기 · 지우기는 할 일 카드에서 한다(여기서는 체크만). 아이디어는 다른 데 보이지 않아 여기서 고치고 지운다.
   const KEEP_EMPTY = ['남은 일', '새로운 아이디어'];
-  function secHtml(s, l, isToday, date) {
+  function secHtml(s, l, isToday) {
     const head = '<h3>' + h(s.name) + '</h3>';
-    if (LISTS[s.name] && (l || isToday)) return listSecHtml(s, l, date);
+    if (s.name === '새로운 아이디어' && s.isList && l) return listSecHtml(s, l);
     if (isToday && EDITABLE.includes(s.name)) {
       const v = s.name in S.drafts ? S.drafts[s.name] : s.text;
       if (!(s.name in S.base)) S.base[s.name] = s.text;
@@ -505,8 +503,8 @@
       '<button class="btn primary" type="submit">저장</button><button class="btn" type="button" data-item-cancel>취소</button></form>';
   }
 
-  // 남은 일 · 새로운 아이디어: 어느 날짜든 고치기 · 지우기 · 더하기.
-  function listSecHtml(s, l, date) {
+  // 새로운 아이디어: 어느 날짜든 고치기 · 지우기.
+  function listSecHtml(s, l) {
     const L = LISTS[s.name];
     const isIdea = s.name === '새로운 아이디어';
     const rows = (s.isList ? s.items : []).map((it) => {
@@ -523,12 +521,8 @@
       }
       return '<div class="' + (isIdea ? 'idea-item' : 'tk-row plain') + (busy ? ' busy' : '') + '"' + pad + '><span class="t">' + show(it.text) + '</span>' + buttons + '</div>';
     }).join('');
-    const para = !s.isList && s.text ? '<p>' + show(s.text) + '</p>' : '';
-    const id = addInputId(s.name, date);
-    return '<div class="sec"><h3>' + h(s.name) + '</h3>' + para +
-      (rows ? '<div class="' + (isIdea ? 'idea-list' : 'tk-list') + '">' + rows + '</div>' : (para ? '' : '<div class="hint">아직 없어요.</div>')) +
-      '<form class="item-add" data-item-add="' + date + '" data-sec="' + h(s.name) + '"><label for="' + id + '" class="sr-only">' + kor(date) + ' ' + L.word + ' 추가</label>' +
-      '<input class="field" id="' + id + '" type="text" placeholder="이 날에 ' + L.word + ' 추가" enterkeyhint="done"><button class="btn" type="submit">추가</button></form></div>';
+    return '<div class="sec"><h3>' + h(s.name) + '</h3>' +
+      (rows ? '<div class="' + (isIdea ? 'idea-list' : 'tk-list') + '">' + rows + '</div>' : '<div class="hint">아직 없어요.</div>') + '</div>';
   }
 
   function renderCalendar() {
@@ -537,6 +531,7 @@
     const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const lead = weekday(first);
     const todoDays = new Set(allTasks().filter((x) => !x.t.done).map((x) => x.log.date));
+    const meetDays = new Set(S.meetings.map((x) => meetingInfo(x).date));
     const evDays = new Set();
     (S.monthEvents || []).forEach((e) => eventDays(e).forEach((d) => evDays.add(d)));
     let cells = WD.map((w, i) => '<div class="wd' + (i === 0 ? ' sun' : '') + '">' + w + '</div>').join('');
@@ -546,20 +541,22 @@
       if (n < 1 || n > days) { cells += '<span class="day out" aria-hidden="true"></span>'; continue; }
       const d = y + '-' + String(m).padStart(2, '0') + '-' + String(n).padStart(2, '0');
       const cls = 'day' + (d === S.today ? ' today' : '') + (d === S.selDate && d !== S.today ? ' sel' : '');
-      const label = m + '월 ' + n + '일' + (todoDays.has(d) ? ', 안 한 할 일 있음' : '') + (evDays.has(d) ? ', 일정 있음' : '');
+      const label = m + '월 ' + n + '일' + (todoDays.has(d) ? ', 안 한 할 일 있음' : '') + (evDays.has(d) ? ', 일정 있음' : '') + (meetDays.has(d) ? ', 미팅 노트 있음' : '');
       cells += '<button type="button" class="' + cls + '" data-day="' + d + '" aria-label="' + label + '">' + n +
-        '<span class="marks">' + (todoDays.has(d) ? '<span class="m"></span>' : '') + (evDays.has(d) ? '<span class="m evm"></span>' : '') + '</span></button>';
+        '<span class="marks">' + (todoDays.has(d) ? '<span class="m"></span>' : '') + (evDays.has(d) ? '<span class="m evm"></span>' : '') + (meetDays.has(d) ? '<span class="m mtm"></span>' : '') + '</span></button>';
     }
     const sel = S.selDate;
     let sum = '';
     if (sel) {
       const evs = eventsOn(S.monthEvents, sel);
-      const l = logByDate(sel);
-      const p = parsedOf(l);
-      const openN = p ? p.tasks.filter((t) => !t.done).length : 0;
+      const ms = meetingsOn(sel);
       sum = '<div class="day-sum"><div class="hd">' + kor(sel) + '</div>' +
         (evs.length ? evs.map((e) => '<div><span class="mono">' + evTime(e) + '</span> ' + h(e.title) + '</div>').join('') : '<div class="hint">일정 없음</div>') +
-        (p || sel === S.today ? '<button type="button" class="btn" data-open="' + sel + '">데일리 로그 보기' + (openN ? ' · 할 일 ' + openN : '') + '</button>' : '<div class="hint">데일리 로그 없음</div>') +
+        '<div class="hd sub">미팅 노트</div>' +
+        (ms.length ? ms.map((x) => '<a class="meet-row" href="' + h(obsidianUrl(x.m.title, C.MEETINGS_PATH)) + '" title="옵시디언에서 열기">' +
+          '<span class="mono">' + (x.time || '--:--') + '</span><span class="mt"><b>' + h(x.topic) + '</b>' +
+          (x.who.length || x.open ? '<small>' + h(x.who.join(' · ')) + (x.who.length && x.open ? ' · ' : '') + (x.open ? '할 일 ' + x.open : '') + '</small>' : '') +
+          '</span>' + ICON.out + '</a>').join('') : '<div class="hint">미팅 노트 없음</div>') +
         '</div>';
     }
     $('#calendar').innerHTML =
@@ -567,7 +564,7 @@
       '<button type="button" class="icon-btn" data-month="-1" aria-label="이전 달">' + ICON.left + '</button>' +
       '<button type="button" class="icon-btn" data-month="1" aria-label="다음 달">' + ICON.right + '</button></div></div>' +
       '<div class="cal">' + cells + '</div>' +
-      '<div class="legend"><span><i></i>안 한 할 일이 남은 날</span><span><i class="evm"></i>일정</span></div>' + sum;
+      '<div class="legend"><span><i></i>안 한 할 일이 남은 날</span><span><i class="evm"></i>일정</span><span><i class="mtm"></i>미팅 노트</span></div>' + sum;
   }
 
   function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); }
@@ -631,12 +628,6 @@
         if (!r || v === r.it.text) { S.editItem = null; renderTodos(); renderLogs(); return; }
         if (!v) { if (window.confirm('비워 두면 이 ' + r.word + '을 지워요. 지울까요?')) changeItem(f.dataset.itemSave, null); return; }
         changeItem(f.dataset.itemSave, v);
-      } else if (f.dataset.itemAdd) {
-        e.preventDefault();
-        const inp = f.querySelector('input');
-        const v = inp.value;
-        inp.value = '';
-        addItem(f.dataset.sec, f.dataset.itemAdd, v);
       }
     });
     document.addEventListener('keydown', (e) => {

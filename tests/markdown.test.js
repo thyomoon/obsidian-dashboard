@@ -25,6 +25,13 @@ for (const p of logPaths) {
   }
 }
 
+// 미팅 노트 프론트매터
+const mfm = MD.frontmatter('---\ntype: meeting\nmeeting_at: 2026-10-27T14:15\nattendees: ["[[Don Capone]]", "[[Kris Yu|Kris]]"]\nasset: "[[Webster]]"\ntags:\n  - 개인\nnext: \n---\n## Summary\n');
+ok(mfm.meeting_at === '2026-10-27T14:15', 'meeting_at을 읽는다');
+ok(mfm.attendees.join() === 'Don Capone,Kris Yu', 'attendees 위키링크를 이름으로');
+ok(mfm.asset === "Webster" && mfm.tags.join() === "개인" && Array.isArray(mfm.next), '한 값 · 줄 목록 · 빈 칸');
+ok(Object.keys(MD.frontmatter('## 칸만\n')).length === 0, '프론트매터가 없으면 빈 객체');
+
 // 양식 → 새 로그 → 빠른 입력 → 칸 쓰기
 const tpl = read(tplPath);
 let doc = MD.fillTemplate(tpl, '2026-10-26', '09:30');

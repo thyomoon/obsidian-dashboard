@@ -103,6 +103,28 @@
     return contentLines(lines, sec, commentMask(lines)).join('\n');
   }
 
+  // 프론트매터를 { 칸: 글 | [글] }로. 따옴표와 [[ ]]는 벗긴다. 이 앱이 읽는 칸(meeting_at · attendees 등)만큼만 다룬다.
+  function frontmatter(text) {
+    const lines = splitLines(text).lines;
+    const end = bodyStart(lines);
+    const out = {};
+    const clean = (v) => v.trim().replace(/^["']|["']$/g, '').replace(/^\[\[|\]\]$/g, '').replace(/\|.*$/, '').trim();
+    let key = null;
+    for (let i = 1; i < end - 1; i++) {
+      const kv = lines[i].match(/^([\w-]+):\s*(.*)$/);
+      const item = lines[i].match(/^\s+-\s+(.*)$/);
+      if (kv) {
+        key = kv[1];
+        const v = kv[2].trim();
+        out[key] = /^\[.*\]$/.test(v) ? v.slice(1, -1).split(',').map(clean).filter(Boolean) : v ? clean(v) : [];
+      } else if (item && key) {
+        if (!Array.isArray(out[key])) out[key] = [];
+        out[key].push(clean(item[1]));
+      }
+    }
+    return out;
+  }
+
   function parseLog(text) {
     const { lines } = splitLines(text);
     const mask = commentMask(lines);
@@ -332,6 +354,6 @@
     return { text: String(text).slice(0, m.index), md: m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') };
   }
 
-  const api = { inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
+  const api = { frontmatter, inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);
