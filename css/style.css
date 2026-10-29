@@ -320,3 +320,36 @@ textarea.field.short { min-height: 120px; }
 .mrow .badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
 .mrow > svg { flex: none; color: var(--muted); }
 .ev-add { justify-content: center; }
+
+/* 미팅 미닛 읽기 */
+.facts { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+.facts i { font-style: normal; color: var(--muted); margin-right: 6px; }
+.mbody { gap: 4px; }
+.mbody .mh { font-weight: 700; margin-top: 14px; }
+.mbody .mh:first-child { margin-top: 0; }
+.mbody .mh1 { font-size: 18px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); margin-top: 22px; }
+.mbody .mh2 { font-size: 16px; color: var(--accent); }
+.mbody .mh3 { font-size: 14px; }
+.mbody .mh4 { font-size: 13px; color: var(--muted); }
+.mbody p { line-height: 1.7; }
+.mbody p.gap { margin-top: 6px; }
+.mbody .li { line-height: 1.65; }
+
+.mbody .li.ol .b { color: var(--muted); font-family: var(--mono); font-size: 12px; min-width: 18px; padding-top: 2px; }
+.mhr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.mcode { background: var(--chip); color: var(--chip-ink); border-radius: 8px; padding: 12px 14px; margin: 4px 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; overflow-x: auto; white-space: pre; }
+.mquote { margin: 4px 0; padding: 2px 0 2px 14px; border-left: 3px solid var(--line); color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.mcallout { margin: 6px 0; border-radius: 8px; padding: 10px 14px; border-left: 3px solid var(--idea); background: var(--idea-soft); display: flex; flex-direction: column; gap: 4px; }
+.mcallout .ct { font-weight: 600; font-size: 13px; color: var(--idea-soft-ink); }
+.mcallout .cb { display: flex; flex-direction: column; gap: 4px; color: var(--ink); }
+.mcallout.warn { border-left-color: var(--accent); background: var(--accent-soft); }
+.mcallout.warn .ct { color: var(--accent-soft-ink); }
+.mcallout.plain { border-left-color: var(--line); background: var(--ground); }
+.mcallout.plain .ct { color: var(--muted); font-weight: 500; font-size: 12px; }
+.mtable { overflow-x: auto; margin: 6px 0; -webkit-overflow-scrolling: touch; }
+.mtable table { border-collapse: collapse; font-size: 13.5px; min-width: 100%; }
+.mtable th, .mtable td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+.mtable th { background: var(--ground); font-weight: 600; white-space: nowrap; }
+mark { background: color-mix(in srgb, #F5D04A 55%, transparent); color: inherit; padding: 0 2px; border-radius: 3px; }
+.embed { display: inline-block; padding: 1px 8px; border: 1px dashed var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); }
+.mbody img { max-width: 100%; border-radius: 8px; }

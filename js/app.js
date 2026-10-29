@@ -22,7 +22,7 @@
     openDate: null, showList: false, selDate: null, month: null,
     todayEvents: null, monthEvents: null, eventsError: false,
     busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null, editWhere: null,
-    openMeeting: null, meetFrom: null, meetFilter: 'open', newMeeting: null /* {date, where: 'cal' | 'events'} */, mdrafts: {}, mbase: {}
+    openMeeting: null, meetFrom: null, meetFilter: 'open', meetEdit: false, newMeeting: null /* {date, where: 'cal' | 'events'} */, mdrafts: {}, mbase: {}
   };
 
   // ---------- 날짜 (샌프란시스코 현지 시각) ----------
@@ -320,7 +320,6 @@
 
   // ---------- 미팅 노트 ----------
   // 만들기: 파일 이름은 만든 시각(YYYY-MM-DD HHmm_주제), 실제 회의 시각은 meeting_at(작업 규칙 23).
-  const MEET_STATUS = ['진행중', '대기', '완료', '중단'];
   const MEET_BEFORE = { Summary: ['Takeaways', 'Next Steps'], Takeaways: ['Next Steps'] };
   const fileSafe = (s) => s.replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ').trim();
   const wiki = (n) => '"[[' + n.replace(/"/g, '') + ']]"';
@@ -405,7 +404,7 @@
   function openMeeting(id) {
     flushFields();
     if (!S.openMeeting) S.meetFrom = S.tab;
-    S.openMeeting = id; S.editItem = null; S.saveLabel = ''; S.tab = 'log';
+    S.openMeeting = id; S.meetEdit = false; S.editItem = null; S.saveLabel = ''; S.tab = 'log';
     renderHeader(); renderLogs();
     $('#logs').scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
@@ -606,9 +605,62 @@
 
   // 로그에서 쓰는 칸은 오늘의 「내 한 줄」 · 「오늘의 일기」뿐. 할 일 · 아이디어는 위 빠른 입력으로만 더하고,
   // 할 일 고치기 · 지우기는 할 일 카드에서 한다(여기서는 체크만). 아이디어는 다른 데 보이지 않아 여기서 고치고 지운다.
-  // 미팅 노트 한 장: 속성 · Summary · Takeaways는 바로 고치고, Next Steps는 체크 · 고치기 · 지우기 · 더하기.
-  // 그 밖의 칸(예: 유의사항)은 읽기만 — 옵시디언에서 고친다.
+  // 미팅 미닛 한 장. 처음에는 읽기(본문 전체를 제목 · 불릿 · 체크박스로), 「편집」을 누르면 고치기 화면.
   function meetingHtml(m) {
+    return S.meetEdit ? meetingEditHtml(m) : meetingReadHtml(m);
+  }
+
+  function meetingReadHtml(m) {
+    const f = S.files[m.id] || {};
+    const fm = f.fm || {};
+    const info = meetingInfo(m);
+    const str = (v) => (Array.isArray(v) ? v.join(' · ') : v || '');
+    const facts = [['시각', info.time ? info.time : ''], ['참석자', str(fm.attendees)], ['자산', str(fm.asset)], ['프로젝트', str(fm.project)]]
+      .filter((x) => x[1]).map((x) => '<span><i>' + x[0] + '</i>' + h(x[1]) + '</span>').join('');
+    const body = blocksHtml(MD.blocks(f.text || ''), m);
+    return '<div class="detail meet-read">' +
+      '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button>' +
+      '<button type="button" class="btn" data-meet-edit>' + ICON.edit + '편집</button></span>' +
+      '<div class="meta"><a href="' + h(obsidianUrl(m.title, C.MEETINGS_PATH)) + '">옵시디언에서 열기</a></div></div>' +
+      '<div><div class="eyebrow">미팅 미닛' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
+      (facts ? '<div class="facts">' + facts + '</div>' : '') +
+      '<div class="sec mbody">' + (body || '<div class="hint">아직 내용이 없어요. 「편집」을 눌러 써 주세요.</div>') + '</div></div>';
+  }
+
+  // 마크다운 덩어리 → 읽기용 HTML(옵시디언 읽기 화면 비슷하게). 체크박스는 file 안의 줄 번호로 체크된다.
+  const CALLOUT_TITLE = { claude: 'Claude가 씀', note: 'Note', info: 'Info', tip: 'Tip', warning: 'Warning', caution: 'Caution', danger: 'Danger', question: 'Question', todo: 'Todo', example: 'Example', quote: 'Quote', success: 'Success' };
+  const CALLOUT_TONE = { warning: 'warn', caution: 'warn', danger: 'warn', bug: 'warn', failure: 'warn', claude: 'plain', quote: 'plain' };
+  function blocksHtml(list, file) {
+    let out = '';
+    let gap = false;
+    list.forEach((b) => {
+      if (b.kind === 'blank') { gap = true; return; }
+      const pad = b.depth ? ' style="padding-left:' + Math.min(b.depth, 6) * 18 + 'px"' : '';
+      if (b.kind === 'h') out += '<div class="mh mh' + Math.min(b.level, 4) + '">' + show(b.text) + '</div>';
+      else if (b.kind === 'task') out += taskHtml(b, file);
+      else if (b.kind === 'bullet') out += '<div class="li"' + pad + '><span class="b">·</span><span>' + show(b.text) + '</span></div>';
+      else if (b.kind === 'ol') out += '<div class="li ol"' + pad + '><span class="b">' + b.n + '.</span><span>' + show(b.text) + '</span></div>';
+      else if (b.kind === 'hr') out += '<hr class="mhr">';
+      else if (b.kind === 'code') out += '<pre class="mcode"><code>' + h(b.text) + '</code></pre>';
+      else if (b.kind === 'quote') out += '<blockquote class="mquote">' + blocksHtml(b.children, file) + '</blockquote>';
+      else if (b.kind === 'callout') {
+        const name = CALLOUT_TITLE[b.type] || b.type.charAt(0).toUpperCase() + b.type.slice(1);
+        const title = b.type === 'claude' ? name + (b.title ? ' · ' + b.title : '') : (b.title || name);
+        out += '<div class="mcallout ' + (CALLOUT_TONE[b.type] || 'info') + '"><div class="ct">' + show(title) + '</div>' +
+          (b.children.length ? '<div class="cb">' + blocksHtml(b.children, file) + '</div>' : '') + '</div>';
+      } else if (b.kind === 'table') {
+        const td = (tag, c, j) => '<' + tag + (b.align[j] ? ' style="text-align:' + b.align[j] + '"' : '') + '>' + show(c) + '</' + tag + '>';
+        out += '<div class="mtable"><table><thead><tr>' + b.head.map((c, j) => td('th', c, j)).join('') + '</tr></thead><tbody>' +
+          b.rows.map((r) => '<tr>' + b.head.map((x, j) => td('td', r[j] || '', j)).join('') + '</tr>').join('') + '</tbody></table></div>';
+      } else out += '<p' + (gap ? ' class="gap"' : '') + '>' + show(b.text) + '</p>';
+      gap = false;
+    });
+    return out;
+  }
+
+  // 고치기: 속성 · Summary · Takeaways는 바로 고치고, Next Steps는 체크 · 고치기 · 지우기 · 더하기.
+  // 그 밖의 칸(예: 유의사항)은 읽기만 — 옵시디언에서 고친다.
+  function meetingEditHtml(m) {
     const f = S.files[m.id] || {};
     const fm = f.fm || {};
     const secs = f.parsed ? f.parsed.sections : [];
@@ -620,12 +672,8 @@
       return k in S.mdrafts ? S.mdrafts[k] : cur;
     };
     const input = (name, label, type, cur, ph, wide) => '<label class="mf' + (wide ? ' wide' : '') + '"><span>' + label + '</span><input class="field" type="' + type + '" data-mfield="' + h(m.id + '|fm|' + name) + '" value="' + h(val('fm', name, cur)) + '"' + (ph ? ' placeholder="' + h(ph) + '"' : '') + '></label>';
-    const st = val('fm', 'status', str(fm.status));
-    const opts = MEET_STATUS.concat(st && !MEET_STATUS.includes(st) ? [st] : []);
     const fields = '<div class="mf-grid">' +
       input('meeting_at', '회의 시각', 'datetime-local', typeof fm.meeting_at === 'string' ? fm.meeting_at.slice(0, 16) : '') +
-      '<label class="mf"><span>상태</span><select class="field" data-mfield="' + h(m.id + '|fm|status') + '">' +
-      (st ? '' : '<option value="" selected>—</option>') + opts.map((s) => '<option' + (s === st ? ' selected' : '') + '>' + h(s) + '</option>').join('') + '</select></label>' +
       input('attendees', '참석자', 'text', str(fm.attendees), '쉼표로 나눠서 — Kris Yu, Paul', true) +
       input('asset', '자산', 'text', str(fm.asset), '300 Grant · Webster') +
       input('project', '프로젝트', 'text', str(fm.project), '') + '</div>';
@@ -640,7 +688,8 @@
       '<input class="field" id="meet-add-input" type="text" placeholder="할 일 추가" enterkeyhint="done"><button class="btn" type="submit">추가</button></form></div>';
     const rest = secs.filter((s) => !['Summary', 'Takeaways', 'Next Steps'].includes(s.name)).map((s) => secHtml(s, m, false)).filter(Boolean).join('');
     return '<div class="detail">' +
-      '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button></span>' +
+      '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button>' +
+      '<button type="button" class="btn primary" data-meet-done>다 됐어요</button></span>' +
       '<div class="meta"><span id="save-label">' + h(S.saveLabel) + '</span><a href="' + h(obsidianUrl(m.title, C.MEETINGS_PATH)) + '">옵시디언에서 열기</a></div></div>' +
       '<div><div class="eyebrow">미팅 미닛' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
       fields + textSec('Summary') + textSec('Takeaways') + next + rest + '</div>';
@@ -664,18 +713,22 @@
       const hint = isToday ? (s.name === '남은 일' ? '위 입력칸에서 「할 일」로 쓰면 여기에 들어가요.' : '위 입력칸에서 「아이디어」로 쓰면 여기에 들어가요.') : '비어 있음';
       return '<div class="sec">' + head + '<div class="hint">' + hint + '</div></div>';
     }
-    if (!s.isList) {
-      const parts = (s.parts && s.parts.length ? s.parts : [{ text: s.text }]).map((pt) =>
-        (pt.by === 'claude' ? byClaude(pt) : '') + '<p' + (pt.by === 'claude' ? ' class="claude"' : '') + '>' + show(pt.text) + '</p>').join('');
-      return '<div class="sec">' + head + parts + '</div>';
-    }
-    const items = s.items.map((it) => {
-      const pad = ' style="padding-left:' + it.depth * 20 + 'px"';
-      if (it.kind === 'callout') return it.type === 'claude' ? byClaude(it) : '';
-      if (it.kind === 'task') return taskHtml(it, l);
-      return '<div class="li"' + pad + '><span class="b">·</span><span>' + show(it.text) + '</span></div>';
-    }).join('');
-    return '<div class="sec">' + head + '<div>' + items + '</div></div>';
+    // 읽는 칸은 미팅 미닛과 같은 그리기(콜아웃 상자 · 표 · 번호 목록 …). 체크박스는 그 줄 그대로 체크된다.
+    const bs = l ? sectionBlocks(l)[s.name] : null;
+    return '<div class="sec mbody">' + head + (bs ? blocksHtml(bs, l) : '<p>' + show(s.text) + '</p>') + '</div>';
+  }
+
+  // 파일을 ## 칸마다 덩어리 목록으로 나눈다(읽기 화면용). 파일이 바뀌면 putFile이 새로 만들어서 다시 나눈다.
+  function sectionBlocks(l) {
+    const f = S.files[l.id];
+    if (!f) return {};
+    if (f.secBlocks) return f.secBlocks;
+    const out = {};
+    let cur = null;
+    MD.blocks(f.text).forEach((b) => {
+      if (b.kind === 'h' && b.level === 2) { cur = b.text; out[cur] = []; } else if (cur) out[cur].push(b);
+    });
+    return (f.secBlocks = out);
   }
 
   const byClaude = (it) => '<div class="by-claude">Claude가 씀' + (it.title ? ' · ' + h(it.title) : '') + '</div>';
@@ -772,33 +825,31 @@
       '<div class="row"><button class="btn primary" type="submit">만들기</button><button class="btn" type="button" data-meet-cancel>취소</button></div></form>';
   }
 
-  // 미팅 노트 목록: 회의 날짜 · 시각 내림차순. 「진행중」은 상태가 완료 · 중단이 아닌 것.
-  const MEET_CLOSED = ['완료', '중단'];
+  // 미팅 미닛 목록: 회의 날짜 · 시각 내림차순. 상태 칸은 쓰지 않고, 안 끝낸 Next Steps가 있으면 「할 일 남음」.
   function renderMeetings() {
     const el = $('#meetings');
     if (!el) return;
     if (!S.folders || !S.folders.meetings) { el.innerHTML = ''; return; }
     const all = S.meetings.map((m) => {
       const fm = (S.files[m.id] && S.files[m.id].fm) || {};
-      return Object.assign({ m, status: typeof fm.status === 'string' ? fm.status : '', asset: typeof fm.asset === 'string' ? fm.asset : '' }, meetingInfo(m));
+      return Object.assign({ m, asset: typeof fm.asset === 'string' ? fm.asset : '' }, meetingInfo(m));
     }).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
-    const open = all.filter((x) => !MEET_CLOSED.includes(x.status));
+    const open = all.filter((x) => x.open > 0);
     const list = S.meetFilter === 'all' ? all : open;
     const rows = list.map((x) =>
       '<button type="button" class="mrow" data-meeting="' + h(x.m.id) + '">' +
       '<span class="when"><b>' + (x.date ? md(x.date) : '--/--') + '</b><span>' + (x.time || '') + '</span></span>' +
       '<span class="body"><b>' + h(x.topic) + '</b>' +
       (x.who.length || x.asset ? '<small>' + h(x.who.join(' · ')) + (x.who.length && x.asset ? ' · ' : '') + (x.asset ? '<i>' + h(x.asset) + '</i>' : '') + '</small>' : '') + '</span>' +
-      '<span class="badges">' + (x.open ? '<span class="badge">할 일 ' + x.open + '</span>' : '') +
-      (x.status ? '<span class="badge ' + (MEET_CLOSED.includes(x.status) ? 'zero' : 'idea') + '">' + h(x.status) + '</span>' : '') + '</span>' +
+      '<span class="badges">' + (x.open ? '<span class="badge">할 일 ' + x.open + '</span>' : '<span class="badge zero">끝남</span>') + '</span>' +
       ICON.right + '</button>').join('');
     el.innerHTML = '<div class="card-head"><h2 id="meet-h">미팅 미닛</h2>' +
       '<div class="seg small" role="group" aria-label="미팅 보기">' +
-      '<button type="button" data-meet-filter="open" aria-pressed="' + (S.meetFilter !== 'all') + '">진행중 ' + open.length + '</button>' +
+      '<button type="button" data-meet-filter="open" aria-pressed="' + (S.meetFilter !== 'all') + '">할 일 남음 ' + open.length + '</button>' +
       '<button type="button" data-meet-filter="all" aria-pressed="' + (S.meetFilter === 'all') + '">전체 ' + all.length + '</button></div></div>' +
       (S.newMeeting && S.newMeeting.where === 'meetings' ? '<div class="ev-new">' + newMeetingForm(S.today) + '</div>' :
         '<button type="button" class="btn ev-add top" data-new-meeting="' + S.today + '">+ 새 미팅 미닛</button>') +
-      '<div class="mlist">' + (rows || '<div class="empty">' + (S.meetFilter === 'all' ? '미팅 미닛이 없어요.' : '진행 중인 미팅이 없어요.') + '</div>') + '</div>';
+      '<div class="mlist">' + (rows || '<div class="empty">' + (S.meetFilter === 'all' ? '미팅 미닛이 없어요.' : '할 일이 남은 미팅이 없어요.') + '</div>') + '</div>';
   }
 
   function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); renderMeetings(); }
@@ -820,6 +871,8 @@
       else if (t.dataset.open) openLog(t.dataset.open);
       else if (t.dataset.meeting) openMeeting(t.dataset.meeting);
       else if ('meetClose' in t.dataset) closeMeeting();
+      else if ('meetEdit' in t.dataset) { S.meetEdit = true; renderLogs(); }
+      else if ('meetDone' in t.dataset) { flushFields().then(() => { S.meetEdit = false; S.editItem = null; renderLogs(); }); }
       else if (t.dataset.newMeeting) {
         S.newMeeting = { date: t.dataset.newMeeting, where: t.closest('#events') ? 'events' : t.closest('#meetings') ? 'meetings' : 'cal' };
         renderEvents(); renderCalendar(); renderMeetings();

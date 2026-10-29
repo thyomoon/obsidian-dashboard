@@ -38,6 +38,17 @@ ok(MD.frontmatter(fmx).status === '완료' && /status: 완료\n---/.test(fmx), '
 fmx = MD.setFrontmatter(fmx, 'asset', '');
 ok(/^asset: $/m.test(fmx) && /## Summary/.test(fmx), '빈 값 · 본문은 그대로');
 
+// 읽기용 줄 목록
+const bl = MD.blocks('---\ntype: meeting\n---\n<!-- 안내 -->\n# 1부\n## Summary\n### 배경\n* 첫째\n  * 둘째\n글 한 줄\n- [ ] 할 일\n- [x] 끝\n');
+ok(bl.filter((b) => b.kind !== 'blank').map((b) => b.kind + (b.level || '')).join() === 'h1,h2,h3,bullet,bullet,p,task,task', '제목 · 불릿 · 글 · 체크박스를 나눈다(주석 · 프론트매터 빼고)');
+ok(bl.find((b) => b.kind === 'task').line === 10 && bl[4].depth === 1, '체크박스 줄 번호와 들여쓰기');
+const bl2 = MD.blocks('| 항목 | 금액 |\n|---|--:|\n| Base | $10 |\n\n1. 첫째\n2. 둘째\n\n> [!claude] 2026-10-29T10:00\n> - [ ] 안쪽 할 일\n\n> 인용\n\n---\n```\ncode\n```\n');
+const kinds = bl2.filter((b) => b.kind !== 'blank');
+ok(kinds.map((b) => b.kind).join() === 'table,ol,ol,callout,quote,hr,code', '표 · 번호 목록 · 콜아웃 · 인용 · 구분선 · 코드');
+ok(kinds[0].rows[0][1] === '$10' && kinds[0].align[1] === 'right', '표 칸과 정렬');
+ok(kinds[3].type === 'claude' && kinds[3].children[0].kind === 'task' && kinds[3].children[0].line === 8, '콜아웃 안 체크박스 줄 번호');
+ok(MD.inlineHtml('==형광== ![[a.png]]').indexOf('<mark>형광</mark>') >= 0 && MD.inlineHtml('![[a.png]]').indexOf('embed') >= 0, '형광펜 · 이미지 표시');
+
 // 양식 → 새 로그 → 빠른 입력 → 칸 쓰기
 const tpl = read(tplPath);
 let doc = MD.fillTemplate(tpl, '2026-10-26', '09:30');

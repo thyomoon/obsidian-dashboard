@@ -15,9 +15,74 @@ import json, sys, pathlib, unicodedata
 v = pathlib.Path(sys.argv[1])
 logs = sorted((v / '2. Area of Responsibility/My Think/0. 데일리 로그').glob('20*.md'))
 meets = sorted(p for p in (v / '2. Area of Responsibility/Meetings').glob('20*.md'))
+import datetime, zoneinfo
+today = datetime.datetime.now(zoneinfo.ZoneInfo('America/Los_Angeles')).strftime('%Y-%m-%d')
+# 미리보기 전용 예시 회의록 — 마크다운 문법이 어떻게 보이는지 확인용(볼트에는 없다)
+DEMO = r'''---
+type: meeting
+description: "미리보기용 예시 — 볼트에는 없음"
+author: [Taylor]
+tags: [회사]
+meeting_at: TODAYT09:00
+attendees: ["[[Kris Yu]]", "[[Paul]]"]
+asset: "[[Webster]]"
+project: 
+---
+<!-- 미리보기 전용 예시 회의록 -->
+
+# 1부 — 리스 조건 검토
+
+## Summary
+
+### 임대 조건
+* Base rent는 **연 3% 인상**, 첫 해는 ==무상 3개월==
+	* 무상 기간 동안 CAM은 tenant 부담
+* 자세한 내용은 [[2026-10-22 대화 회의록 — Legal Work 프로젝트]] 참고 #webster
+
+| 항목 | 현재 | 제안 | 차이 |
+|---|---|---|--:|
+| Base Rent ($/sf) | 42.00 | 44.50 | +2.50 |
+| TI Allowance | $60 | $85 | +$25 |
+| 무상 기간 | 없음 | 3개월 | +3 |
+
+### 진행 순서
+1. Tenant 측 LOI 회신 받기
+2. 내부 IC 보고
+   1. 재무 모델 업데이트
+   2. 리스크 메모
+3. 계약서 초안
+
+> [!warning] 주의
+> 보증금 조건이 바뀌면 lender 동의가 필요할 수 있음 — `Section 10(h)` 확인
+
+> [!note] 참고
+> 지난 회의와 같은 조건이면 승인 절차를 줄일 수 있다고 함
+
+> Kris: "가격보다 기간이 더 중요하다"
+
+---
+
+# 2부 — 다음 단계
+
+> [!claude] 2026-10-29T10:51
+> Claude가 녹취를 바탕으로 정리한 칸 예시. 안쪽 체크박스도 누를 수 있다.
+> - [ ] Claude 콜아웃 안의 할 일
+
+```
+Base rent 계산: 12,500 sf × $44.50 = $556,250 / year
+```
+
+![[평면도.png]]
+
+## Next Steps
+- [ ] LOI 회신 기한 확인 (2026-11-03)
+- [x] 재무 모델 초안 공유
+- Paul이 lender에 보증금 조건 문의 (Paul 몫이라 불릿)
+'''
 data = {'template': (v / 'Templates/데일리 로그.md').read_text(encoding='utf-8'),
         'meetTemplate': (v / 'Templates/Meeting Minutes.md').read_text(encoding='utf-8'),
-        'meetings': [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in meets],
+        'meetings': [{'name': today + ' 0900_예시 회의록 — 마크다운 미리보기.md', 'text': DEMO.replace('TODAY', today)}] +
+                    [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in meets],
         'logs': [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in logs]}
 pathlib.Path(sys.argv[2]).write_text('window.FIXTURES = ' + json.dumps(data, ensure_ascii=False) + ';', encoding='utf-8')
 EOF

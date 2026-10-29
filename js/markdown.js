@@ -125,6 +125,62 @@
     return out;
   }
 
+  // 화면에 읽기용으로 그릴 덩어리 목록(프론트매터 · 주석은 뺀다). 줄 번호(line)는 체크박스를 누를 때 쓴다.
+  // 제목 · 체크박스 · 불릿 · 번호 목록 · 표 · 코드 · 구분선 · 인용 · 콜아웃(> [!종류] 제목, 안은 다시 덩어리 목록).
+  const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+  const cells = (l) => l.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+  function blocks(text) {
+    const lines = splitLines(text).lines;
+    const mask = commentMask(lines);
+    const rows = [];
+    for (let i = bodyStart(lines); i < lines.length; i++) if (!mask[i]) rows.push({ l: lines[i], i });
+    return blockRows(rows);
+  }
+  function blockRows(rows) {
+    const out = [];
+    for (let k = 0; k < rows.length; k++) {
+      const { l, i } = rows[k];
+      if (!l.trim()) { out.push({ kind: 'blank', line: i }); continue; }
+      if (/^\s*```/.test(l)) {
+        const lang = l.trim().slice(3).trim();
+        const body = [];
+        while (++k < rows.length && !/^\s*```/.test(rows[k].l)) body.push(rows[k].l);
+        out.push({ kind: 'code', lang, text: body.join('\n'), line: i });
+        continue;
+      }
+      if (QUOTE.test(l)) {
+        const inner = [];
+        while (k < rows.length && QUOTE.test(rows[k].l)) { inner.push({ l: rows[k].l.replace(/^[ \t]*>[ \t]?/, ''), i: rows[k].i }); k++; }
+        k--;
+        const head = inner[0].l.match(/^\[!([\w-]+)\][+-]?[ \t]*(.*)$/);
+        if (head) out.push({ kind: 'callout', type: head[1].toLowerCase(), title: head[2], children: blockRows(inner.slice(1)), line: i });
+        else out.push({ kind: 'quote', children: blockRows(inner), line: i });
+        continue;
+      }
+      if (/^\s*\|/.test(l) && k + 1 < rows.length && TABLE_SEP.test(rows[k + 1].l)) {
+        const head = cells(l);
+        const align = cells(rows[k + 1].l).map((c) => (/^:-+:$/.test(c) ? 'center' : /-:$/.test(c) ? 'right' : ''));
+        const body = [];
+        k += 2;
+        while (k < rows.length && /^\s*\|/.test(rows[k].l)) { body.push(cells(rows[k].l)); k++; }
+        k--;
+        out.push({ kind: 'table', head, align, rows: body, line: i });
+        continue;
+      }
+      const hd = l.match(/^(#{1,6})\s+(.*)$/);
+      const t = l.match(TASK);
+      const b = l.match(BULLET);
+      const o = l.match(/^(\s*)(\d+)[.)]\s+(.*)$/);
+      if (hd) out.push({ kind: 'h', level: hd[1].length, text: hd[2].trim(), line: i });
+      else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) out.push({ kind: 'hr', line: i });
+      else if (t) out.push({ kind: 'task', depth: depthOf(t[1]), done: t[2] !== ' ', text: t[3], line: i });
+      else if (b) out.push({ kind: 'bullet', depth: depthOf(b[1]), text: b[2], line: i });
+      else if (o) out.push({ kind: 'ol', depth: depthOf(o[1]), n: Number(o[2]), text: o[3], line: i });
+      else out.push({ kind: 'p', text: l.trim(), line: i });
+    }
+    return out;
+  }
+
   function parseLog(text) {
     const { lines } = splitLines(text);
     const mask = commentMask(lines);
@@ -355,11 +411,14 @@
     return String(s).split(/(`[^`]+`)/).map((part, i) => {
       if (i % 2) return '<code>' + esc(part.slice(1, -1)) + '</code>';
       return esc(part)
+        .replace(/!\[\[([^\]|]+)(\|[^\]]*)?\]\]/g, '<span class="embed">이미지 · $1</span>')
+        .replace(/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g, '<img src="$2" alt="$1" loading="lazy">')
         .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '<span class="wl">$2</span>')
         .replace(/\[\[([^\]]+)\]\]/g, '<span class="wl">$1</span>')
         .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
         .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
         .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+        .replace(/==([^=]+)==/g, '<mark>$1</mark>')
         .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?![*\w])/g, '$1<em>$2</em>')
         .replace(/(^|\s)#([\p{L}\p{N}_\/-]+)/gu, '$1<span class="tag">#$2</span>');
     }).join('');
@@ -373,6 +432,6 @@
     return { text: String(text).slice(0, m.index), md: m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') };
   }
 
-  const api = { frontmatter, setFrontmatter, inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
+  const api = { blocks, frontmatter, setFrontmatter, inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);
