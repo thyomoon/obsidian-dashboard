@@ -22,11 +22,12 @@ DEMO = r'''---
 type: meeting
 description: "미리보기용 예시 — 볼트에는 없음"
 author: [Taylor]
-tags: [회사]
+tags: []
 meeting_at: TODAYT09:00
 attendees: ["[[Kris Yu]]", "[[Paul]]"]
-asset: "[[Webster]]"
-project: 
+area: 회사
+project: "[[Webster 리스]]"
+related: ["[[Webster]]"]
 ---
 <!-- 미리보기 전용 예시 회의록 -->
 

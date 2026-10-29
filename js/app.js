@@ -370,8 +370,8 @@
   }
   function fmValue(name, v) {
     v = v.trim();
-    if (name === 'attendees') { const p = names(v); return p.length ? '[' + p.map(wiki).join(', ') + ']' : '[]'; }
-    if (name === 'asset' || name === 'project') return v ? wiki(v.replace(/\[\[|\]\]/g, '')) : '';
+    if (name === 'attendees' || name === 'related') { const p = names(v); return p.length ? '[' + p.map(wiki).join(', ') + ']' : '[]'; }
+    if (name === 'project') { const p = names(v); return p.length > 1 ? '[' + p.map(wiki).join(', ') + ']' : p.length ? wiki(p[0]) : ''; }
     return v;
   }
   async function doSaveMeetField(key) {
@@ -552,7 +552,8 @@
     $('#events').innerHTML = '<div class="card-head"><h2 id="events-h">오늘 일정</h2><span class="sub">구글 캘린더</span></div>' + body;
   }
 
-  // 기본은 로그 한 장(열어 둔 날, 없으면 오늘). 「전체 로그」를 누르면 있는 로그 전부를 날짜 내림차순 목록으로.
+  // 기본은 로그 한 장(열어 둔 날, 없으면 오늘). 「전체 로그」를 누르면 날짜 내림차순 목록 — 날짜마다 그날 로그 한 줄,
+  // 그 아래에 그날 미팅 미닛(회의 시각순). 미팅만 있는 날도 날짜 줄이 생긴다.
   function renderLogs() {
     const el = $('#logs');
     if (S.openMeeting) {
@@ -562,9 +563,9 @@
     }
     if (!S.showList) { el.innerHTML = detailHtml(S.openDate || S.today); return; }
     const rows = [];
-    const dates = S.logs.map((l) => l.date);
-    if (!dates.includes(S.today)) dates.unshift(S.today);
-    for (const d of dates) {
+    const dates = new Set(S.logs.map((l) => l.date).concat([S.today]));
+    S.meetings.forEach((m) => { const d = meetingInfo(m).date; if (d) dates.add(d); });
+    for (const d of Array.from(dates).sort().reverse()) {
       const l = logByDate(d);
       const p = parsedOf(l);
       const isToday = d === S.today;
@@ -573,14 +574,17 @@
       let line = p && p.oneLine ? p.oneLine.split('\n')[0] : '';
       let dim = false;
       if (!line && p && p.summary) { line = '요약 · ' + p.summary.split('\n')[0]; dim = true; }
-      if (!line) { line = isToday ? '아직 안 씀 · 눌러서 쓰기' : '내 한 줄 없음'; dim = true; }
+      if (!line) { line = isToday ? '아직 안 씀 · 눌러서 쓰기' : l ? '내 한 줄 없음' : '데일리 로그 없음'; dim = true; }
       rows.push('<button type="button" class="log-row' + (isToday ? ' today' : '') + '" data-open="' + d + '">' +
         '<span class="when"><b>' + md(d) + '</b><span>' + (isToday ? '오늘' : WD[weekday(d)]) + '</span></span>' +
         '<span class="line' + (dim ? ' dim' : '') + '">' + show(line) + '</span>' +
         '<span class="badges"><span class="badge' + (openN ? '' : ' zero') + '">할 일 ' + openN + '</span><span class="badge idea' + (ideaN ? '' : ' zero') + '">아이디어 ' + ideaN + '</span></span>' +
         ICON.right + '</button>');
+      meetingsOn(d).forEach((x) => rows.push('<button type="button" class="log-meet" data-meeting="' + h(x.m.id) + '">' +
+        '<span class="mono">' + (x.time || '--:--') + '</span><span class="mt">' + h(x.topic) + '</span>' +
+        (x.open ? '<span class="badge">할 일 ' + x.open + '</span>' : '<span class="badge zero">끝남</span>') + ICON.right + '</button>'));
     }
-    el.innerHTML = '<div class="card-head"><h2 id="logs-h">데일리 로그 · 전체 ' + S.logs.length + '개</h2>' +
+    el.innerHTML = '<div class="card-head"><h2 id="logs-h">데일리 로그 ' + S.logs.length + ' · 미팅 미닛 ' + S.meetings.length + '</h2>' +
       '<button type="button" class="btn" data-open="' + S.today + '">오늘 로그</button></div><div>' + rows.join('') + '</div>';
   }
 
@@ -615,7 +619,7 @@
     const fm = f.fm || {};
     const info = meetingInfo(m);
     const str = (v) => (Array.isArray(v) ? v.join(' · ') : v || '');
-    const facts = [['시각', info.time ? info.time : ''], ['참석자', str(fm.attendees)], ['자산', str(fm.asset)], ['프로젝트', str(fm.project)]]
+    const facts = [['영역', str(fm.area)], ['시각', info.time ? info.time : ''], ['참석자', str(fm.attendees)], ['프로젝트', str(fm.project)], ['관련', str(fm.related) || str(fm.asset)]]
       .filter((x) => x[1]).map((x) => '<span><i>' + x[0] + '</i>' + h(x[1]) + '</span>').join('');
     const body = blocksHtml(MD.blocks(f.text || ''), m);
     return '<div class="detail meet-read">' +
@@ -625,6 +629,14 @@
       '<div><div class="eyebrow">미팅 미닛' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
       (facts ? '<div class="facts">' + facts + '</div>' : '') +
       '<div class="sec mbody">' + (body || '<div class="hint">아직 내용이 없어요. 「편집」을 눌러 써 주세요.</div>') + '</div></div>';
+  }
+
+  // 영역: 주간 검토의 영역 태그와 같은 목록. 목록에 없는 값이 이미 있으면 그대로 보여 준다.
+  const AREAS = ['회사', '개인', '학교', 'SideHustle', 'CPA', 'AI'];
+  function areaSelect(m, cur) {
+    const opts = AREAS.concat(cur && !AREAS.includes(cur) ? [cur] : []);
+    return '<label class="mf"><span>영역</span><select class="field" data-mfield="' + h(m.id + '|fm|area') + '">' +
+      (cur ? '' : '<option value="" selected>—</option>') + opts.map((a) => '<option' + (a === cur ? ' selected' : '') + '>' + h(a) + '</option>').join('') + '</select></label>';
   }
 
   // 마크다운 덩어리 → 읽기용 HTML(옵시디언 읽기 화면 비슷하게). 체크박스는 file 안의 줄 번호로 체크된다.
@@ -674,9 +686,10 @@
     const input = (name, label, type, cur, ph, wide) => '<label class="mf' + (wide ? ' wide' : '') + '"><span>' + label + '</span><input class="field" type="' + type + '" data-mfield="' + h(m.id + '|fm|' + name) + '" value="' + h(val('fm', name, cur)) + '"' + (ph ? ' placeholder="' + h(ph) + '"' : '') + '></label>';
     const fields = '<div class="mf-grid">' +
       input('meeting_at', '회의 시각', 'datetime-local', typeof fm.meeting_at === 'string' ? fm.meeting_at.slice(0, 16) : '') +
+      areaSelect(m, val('fm', 'area', str(fm.area))) +
       input('attendees', '참석자', 'text', str(fm.attendees), '쉼표로 나눠서 — Kris Yu, Paul', true) +
-      input('asset', '자산', 'text', str(fm.asset), '300 Grant · Webster') +
-      input('project', '프로젝트', 'text', str(fm.project), '') + '</div>';
+      input('project', '프로젝트', 'text', str(fm.project), '쉼표로 — lease, Construction') +
+      input('related', '관련', 'text', str(fm.related) || str(fm.asset), '쉼표로 — 300 Grant, Webster') + '</div>';
     const textSec = (name) => {
       const id = 'mt-' + name.toLowerCase();
       return '<div class="sec"><label for="' + id + '"><h3>' + name + '</h3></label><textarea class="field short" id="' + id + '" data-mfield="' + h(m.id + '|sec|' + name) + '">' +
@@ -832,7 +845,8 @@
     if (!S.folders || !S.folders.meetings) { el.innerHTML = ''; return; }
     const all = S.meetings.map((m) => {
       const fm = (S.files[m.id] && S.files[m.id].fm) || {};
-      return Object.assign({ m, asset: typeof fm.asset === 'string' ? fm.asset : '' }, meetingInfo(m));
+      const one = (v) => (Array.isArray(v) ? v[0] || '' : v || '');
+      return Object.assign({ m, area: one(fm.area), tag: one(fm.project) || one(fm.related) || one(fm.asset) }, meetingInfo(m));
     }).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
     const open = all.filter((x) => x.open > 0);
     const list = S.meetFilter === 'all' ? all : open;
@@ -840,7 +854,7 @@
       '<button type="button" class="mrow" data-meeting="' + h(x.m.id) + '">' +
       '<span class="when"><b>' + (x.date ? md(x.date) : '--/--') + '</b><span>' + (x.time || '') + '</span></span>' +
       '<span class="body"><b>' + h(x.topic) + '</b>' +
-      (x.who.length || x.asset ? '<small>' + h(x.who.join(' · ')) + (x.who.length && x.asset ? ' · ' : '') + (x.asset ? '<i>' + h(x.asset) + '</i>' : '') + '</small>' : '') + '</span>' +
+      '<small>' + (x.area ? '<em class="area">' + h(x.area) + '</em>' : '') + h(x.who.join(' · ')) + (x.who.length && x.tag ? ' · ' : '') + (x.tag ? '<i>' + h(x.tag) + '</i>' : '') + '</small></span>' +
       '<span class="badges">' + (x.open ? '<span class="badge">할 일 ' + x.open + '</span>' : '<span class="badge zero">끝남</span>') + '</span>' +
       ICON.right + '</button>').join('');
     el.innerHTML = '<div class="card-head"><h2 id="meet-h">미팅 미닛</h2>' +

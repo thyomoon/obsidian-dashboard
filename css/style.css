@@ -353,3 +353,17 @@ textarea.field.short { min-height: 120px; }
 mark { background: color-mix(in srgb, #F5D04A 55%, transparent); color: inherit; padding: 0 2px; border-radius: 3px; }
 .embed { display: inline-block; padding: 1px 8px; border: 1px dashed var(--line); border-radius: 6px; font-size: 12px; color: var(--muted); }
 .mbody img { max-width: 100%; border-radius: 8px; }
+
+/* 로그 목록 안의 미팅 미닛 줄: 날짜 줄 아래에 들여서 */
+.log-meet { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px 8px 76px; border: 0; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; font-size: 14px; position: relative; }
+.log-meet::before { content: ''; position: absolute; left: 40px; top: 50%; width: 22px; border-top: 1.5px solid var(--idea); }
+.log-meet:hover { background: var(--ground); }
+.log-meet .mono { font-family: var(--mono); font-size: 12px; color: var(--idea-soft-ink); flex: none; }
+.log-meet .mt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--idea-soft-ink); font-weight: 500; }
+.log-meet > svg { flex: none; color: var(--muted); width: 14px; height: 14px; }
+@media (max-width: 760px) {
+  .log-meet { padding-left: 40px; }
+  .log-meet::before { left: 14px; width: 18px; }
+  .log-meet .mt { white-space: normal; }
+}
+.mrow .body small em.area { font-style: normal; display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--chip); color: var(--chip-ink); font-size: 11px; }
