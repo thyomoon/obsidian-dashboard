@@ -31,6 +31,12 @@ ok(mfm.meeting_at === '2026-10-27T14:15', 'meeting_at을 읽는다');
 ok(mfm.attendees.join() === 'Don Capone,Kris Yu', 'attendees 위키링크를 이름으로');
 ok(mfm.asset === "Webster" && mfm.tags.join() === "개인" && Array.isArray(mfm.next), '한 값 · 줄 목록 · 빈 칸');
 ok(Object.keys(MD.frontmatter('## 칸만\n')).length === 0, '프론트매터가 없으면 빈 객체');
+let fmx = MD.setFrontmatter('---\ntype: meeting\nattendees:\n  - "[[A]]"\nasset: \n---\n## Summary\n', 'attendees', '["[[B]]", "[[C]]"]');
+ok(MD.frontmatter(fmx).attendees.join() === 'B,C' && fmx.indexOf('[[A]]') < 0, '목록 칸을 한 줄로 바꾼다');
+fmx = MD.setFrontmatter(fmx, 'status', '완료');
+ok(MD.frontmatter(fmx).status === '완료' && /status: 완료\n---/.test(fmx), '없는 칸은 닫는 --- 앞에 더한다');
+fmx = MD.setFrontmatter(fmx, 'asset', '');
+ok(/^asset: $/m.test(fmx) && /## Summary/.test(fmx), '빈 값 · 본문은 그대로');
 
 // 양식 → 새 로그 → 빠른 입력 → 칸 쓰기
 const tpl = read(tplPath);

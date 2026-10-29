@@ -9,6 +9,7 @@ window.CONFIG = {
   TEMPLATE_PATH: ['Templates', '데일리 로그.md'],
   // 미팅 노트 폴더 — 「Next Steps」 체크박스를 할 일에 함께 보여 주고, 체크는 그 노트에서 한다
   MEETINGS_PATH: ['2. Area of Responsibility', 'Meetings'],
+  MEETING_TEMPLATE_PATH: ['Templates', 'Meeting Minutes.md'],
 
   // 옵시디언 앱에서 쓰는 볼트 이름 — "옵시디언에서 열기" 링크용
   OBSIDIAN_VAULT: 'Taylor 2 Brain',

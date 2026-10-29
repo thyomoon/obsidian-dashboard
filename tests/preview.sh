@@ -14,7 +14,10 @@ python3 - "$VAULT" "$TMP/js/fixtures.js" <<'EOF'
 import json, sys, pathlib, unicodedata
 v = pathlib.Path(sys.argv[1])
 logs = sorted((v / '2. Area of Responsibility/My Think/0. 데일리 로그').glob('20*.md'))
+meets = sorted(p for p in (v / '2. Area of Responsibility/Meetings').glob('20*.md'))
 data = {'template': (v / 'Templates/데일리 로그.md').read_text(encoding='utf-8'),
+        'meetTemplate': (v / 'Templates/Meeting Minutes.md').read_text(encoding='utf-8'),
+        'meetings': [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in meets],
         'logs': [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in logs]}
 pathlib.Path(sys.argv[2]).write_text('window.FIXTURES = ' + json.dumps(data, ensure_ascii=False) + ';', encoding='utf-8')
 EOF

@@ -97,7 +97,7 @@
 
   async function findLogFolder() {
     const cached = store.get('od.folders');
-    if (cached && cached.client === C.CLIENT_ID && 'meetings' in cached) {
+    if (cached && cached.client === C.CLIENT_ID && 'meetTemplate' in cached) {
       logFolderId = cached.logs; meetingFolderId = cached.meetings; return cached;
     }
     const vault = await childPath('root', C.VAULT_PATH, false);
@@ -105,9 +105,12 @@
     const template = await childPath(vault, C.TEMPLATE_PATH, true);
     // Meetings 폴더는 없어도 된다 — 없으면 미팅 할 일만 빠진다.
     let meetings = null;
+    let meetTemplate = null;
     try { meetings = await childPath(vault, C.MEETINGS_PATH, false); }
     catch (e) { if (e instanceof AuthError) throw e; }
-    const f = { client: C.CLIENT_ID, vault, logs, template, meetings };
+    try { meetTemplate = await childPath(vault, C.MEETING_TEMPLATE_PATH, true); }
+    catch (e) { if (e instanceof AuthError) throw e; }
+    const f = { client: C.CLIENT_ID, vault, logs, template, meetings, meetTemplate };
     store.set('od.folders', f);
     logFolderId = logs; meetingFolderId = meetings;
     return f;
@@ -164,11 +167,19 @@
     return res.json();
   }
 
-  async function createLog(name, text) {
+  function createLog(name, text) {
     if (!logFolderId) throw new Error('데일리 로그 폴더를 아직 못 찾았어요.');
+    return create(logFolderId, name, text);
+  }
+  function createMeeting(name, text) {
+    if (!meetingFolderId) throw new Error('Meetings 폴더를 아직 못 찾았어요.');
+    return create(meetingFolderId, name, text);
+  }
+
+  async function create(folderId, name, text) {
     const boundary = 'od' + Math.random().toString(36).slice(2);
     const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' +
-      JSON.stringify({ name, parents: [logFolderId], mimeType: 'text/markdown' }) +
+      JSON.stringify({ name, parents: [folderId], mimeType: 'text/markdown' }) +
       '\r\n--' + boundary + '\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n' + text + '\r\n--' + boundary + '--';
     const res = await call(UPLOAD + '/files?uploadType=multipart&fields=id,name,modifiedTime', {
       method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + boundary }, body
@@ -191,7 +202,10 @@
           allDay: !!(e.start && e.start.date),
           start: e.start.dateTime || e.start.date,
           end: e.end ? (e.end.dateTime || e.end.date) : null,
-          color: c.backgroundColor || null
+          color: c.backgroundColor || null,
+          // 참석자: 나와 회의실(resource)은 빼고, 이름이 없으면 메일 주소 앞부분
+          who: (e.attendees || []).filter((a) => !a.self && !a.resource && a.responseStatus !== 'declined')
+            .map((a) => a.displayName || (a.email || '').split('@')[0]).filter(Boolean)
         }));
       } catch (err) {
         if (err instanceof AuthError) throw err;
@@ -201,5 +215,5 @@
     return [].concat(...all).sort((a, b) => (a.start < b.start ? -1 : 1));
   }
 
-  window.G = { login, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, meta, readText, writeText, createLog, events };
+  window.G = { login, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, meta, readText, writeText, createLog, createMeeting, events };
 })();

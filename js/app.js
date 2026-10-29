@@ -21,7 +21,8 @@
     showDone: false, kind: 'todo', tab: 'home',
     openDate: null, showList: false, selDate: null, month: null,
     todayEvents: null, monthEvents: null, eventsError: false,
-    busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null, editWhere: null
+    busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null, editWhere: null,
+    openMeeting: null, meetFrom: null, newMeeting: null /* {date, where: 'cal' | 'events'} */, mdrafts: {}, mbase: {}
   };
 
   // ---------- 날짜 (샌프란시스코 현지 시각) ----------
@@ -231,7 +232,8 @@
   // 로그 상세에서 고치고 지우고 더할 수 있는 목록 칸. before: 칸이 없을 때 그 앞에 만든다.
   const LISTS = {
     '남은 일': { word: '할 일', line: (v) => '- [ ] ' + v, before: ['새로운 아이디어', '오늘의 일기'] },
-    '새로운 아이디어': { word: '아이디어', line: (v) => '- ' + v, before: ['오늘의 일기'] }
+    '새로운 아이디어': { word: '아이디어', line: (v) => '- ' + v, before: ['오늘의 일기'] },
+    'Next Steps': { word: '할 일', line: (v) => '- [ ] ' + v, before: [] }
   };
 
   function itemRef(key) {
@@ -309,8 +311,110 @@
     setSave('저장됨 · ' + timeHM(new Date()));
     renderTodos(); renderCalendar();
   }
-  function flushFields() { Object.keys(timers).forEach((n) => { clearTimeout(timers[n]); if (n in S.drafts) saveField(n); }); return saving; }
+  function flushFields() {
+    Object.keys(timers).forEach((n) => { clearTimeout(timers[n]); if (n in S.drafts) saveField(n); });
+    Object.keys(mtimers).forEach(saveMeetField);
+    return saving;
+  }
   function setSave(t) { S.saveLabel = t; const el = $('#save-label'); if (el) el.textContent = t; }
+
+  // ---------- 미팅 노트 ----------
+  // 만들기: 파일 이름은 만든 시각(YYYY-MM-DD HHmm_주제), 실제 회의 시각은 meeting_at(작업 규칙 23).
+  const MEET_STATUS = ['진행중', '대기', '완료', '중단'];
+  const MEET_BEFORE = { Summary: ['Takeaways', 'Next Steps'], Takeaways: ['Next Steps'] };
+  const fileSafe = (s) => s.replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ').trim();
+  const wiki = (n) => '"[[' + n.replace(/"/g, '') + ']]"';
+  const names = (v) => v.split(/[,，]/).map((x) => x.replace(/\[\[|\]\]/g, '').trim()).filter(Boolean);
+
+  async function createMeeting(date, topic, time, who) {
+    const t = fileSafe(topic);
+    if (!t) { toast('주제를 써 주세요.'); return; }
+    if (!S.folders.meetTemplate) throw new Error('드라이브에서 Templates/Meeting Minutes.md를 찾지 못했어요.');
+    const now = new Date();
+    const name = dateKey(now) + ' ' + timeHM(now).replace(':', '') + '_' + t + '.md';
+    let text = MD.fillTemplate(await G.readText(S.folders.meetTemplate), date, time || timeHM(now));
+    const ppl = names(who || '');
+    if (ppl.length) text = MD.setFrontmatter(text, 'attendees', '[' + ppl.map(wiki).join(', ') + ']');
+    const f = await G.createMeeting(name, text);
+    S.meetings.unshift({ id: f.id, name, title: name.replace(/\.md$/, ''), date: name.slice(0, 10), modifiedTime: f.modifiedTime, meeting: true });
+    putFile(f.id, text, f.modifiedTime);
+    saveCache();
+    S.newMeeting = null;
+    toast('미팅 노트를 만들었어요.');
+    renderEvents(); renderCalendar();
+    openMeeting(f.id);
+  }
+
+  async function addNextStep(id, value) {
+    const v = value.replace(/\s+/g, ' ').trim();
+    if (!v) return;
+    try {
+      await mutate(id, (t) => MD.appendToSection(t, 'Next Steps', '- [ ] ' + v, []), true);
+      renderAll();
+      const inp = $('#meet-add-input');
+      if (inp) inp.focus();
+    } catch (e) { fail(e); }
+  }
+
+  // 미팅 노트 칸(속성 · Summary · Takeaways): 쓰다가 1.2초 멈추면 저장. key = 파일 id|fm 또는 sec|칸 이름
+  const mtimers = {};
+  function onMeetField(key, value) {
+    S.mdrafts[key] = value;
+    setSave('입력 중');
+    clearTimeout(mtimers[key]);
+    mtimers[key] = setTimeout(() => saveMeetField(key), 1200);
+  }
+  function saveMeetField(key) {
+    clearTimeout(mtimers[key]); delete mtimers[key];
+    saving = saving.then(() => doSaveMeetField(key)).catch(fail);
+    return saving;
+  }
+  function fmValue(name, v) {
+    v = v.trim();
+    if (name === 'attendees') { const p = names(v); return p.length ? '[' + p.map(wiki).join(', ') + ']' : '[]'; }
+    if (name === 'asset' || name === 'project') return v ? wiki(v.replace(/\[\[|\]\]/g, '')) : '';
+    return v;
+  }
+  async function doSaveMeetField(key) {
+    if (!(key in S.mdrafts)) return;
+    const value = S.mdrafts[key];
+    const [id, kind, name] = key.split('|');
+    setSave('저장 중…');
+    const fresh = await G.readText(id);
+    let next;
+    if (kind === 'sec') {
+      const remote = MD.getSectionText(fresh, name);
+      const base = key in S.mbase ? S.mbase[key] : MD.getSectionText(S.files[id].text, name);
+      if (remote !== base && remote !== value.trim()) {
+        setSave('저장 안 함');
+        toast('「' + name + '」 칸이 다른 곳에서 바뀌었어요. 덮어쓰지 않았어요 — 쓴 내용을 복사해 두고 새로고침해 주세요.');
+        return;
+      }
+      next = MD.setSectionText(fresh, name, value, MEET_BEFORE[name] || []);
+    } else next = MD.setFrontmatter(fresh, name, fmValue(name, value));
+    next = MD.addAuthor(MD.touchModified(next, stamp()), 'Taylor');
+    const res = await G.writeText(id, next);
+    putFile(id, next, res.modifiedTime);
+    saveCache();
+    if (kind === 'sec') S.mbase[key] = MD.getSectionText(next, name);
+    if (S.mdrafts[key] === value) delete S.mdrafts[key];
+    setSave('저장됨 · ' + timeHM(new Date()));
+    renderTodos(); renderCalendar();
+  }
+
+  function openMeeting(id) {
+    flushFields();
+    if (!S.openMeeting) S.meetFrom = S.tab;
+    S.openMeeting = id; S.editItem = null; S.saveLabel = ''; S.tab = 'log';
+    renderHeader(); renderLogs();
+    $('#logs').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  function closeMeeting() {
+    flushFields();
+    S.tab = S.meetFrom || 'log';
+    S.openMeeting = null; S.meetFrom = null; S.editItem = null; S.saveLabel = '';
+    renderHeader(); renderLogs();
+  }
 
   // ---------- 그리기 ----------
   // 데일리 로그와 미팅 노트의 체크박스를 날짜 내림차순으로. 미팅 할 일은 그 노트 안에서 체크된다(toggle의 else).
@@ -344,8 +448,8 @@
 
   function sourceChip(log) {
     if (log.meeting) {
-      return '<a class="chip meet" href="' + h(obsidianUrl(log.title, C.MEETINGS_PATH)) + '" title="' + h(log.title) + ' — 옵시디언에서 열기">미팅' +
-        (log.date ? ' ' + md(log.date) : '') + ICON.out + '</a>';
+      return '<button type="button" class="chip meet" data-meeting="' + h(log.id) + '" title="' + h(log.title) + ' 미팅 노트 보기">미팅' +
+        (log.date ? ' ' + md(log.date) : '') + ICON.out + '</button>';
     }
     return '<button type="button" class="chip' + (log.date === S.today ? ' today' : '') + '" data-open="' + log.date + '" title="' + h(log.date) + ' 데일리 로그 보기">' + md(log.date) + ICON.out + '</button>';
   }
@@ -389,6 +493,20 @@
     const s = timeHM(new Date(e.start));
     return e.end ? s + ' – ' + timeHM(new Date(e.end)) : s;
   }
+  // 일정에 맞는 미팅 노트: 같은 날이고, 주제가 일정 제목과 같거나 시작 시각이 같으면 그 노트로 본다.
+  function noteForEvent(e) {
+    const t = e.allDay ? '' : timeHM(new Date(e.start));
+    const topic = fileSafe(e.title);
+    const hit = meetingsOn(S.today).find((x) => x.topic === topic || (t && x.time === t));
+    return hit ? hit.m : null;
+  }
+  function eventNoteButton(e, i) {
+    const m = noteForEvent(e);
+    return m
+      ? '<button type="button" class="btn sm ev-note has" data-meeting="' + h(m.id) + '">노트 열기</button>'
+      : '<button type="button" class="btn sm ev-note" data-event-note="' + i + '" aria-label="' + h(e.title) + ' 미팅 노트 만들기">+ 노트</button>';
+  }
+
   function renderEvents() {
     let body;
     if (S.eventsError) body = '<div class="empty">캘린더를 불러오지 못했어요.</div>';
@@ -396,9 +514,13 @@
     else {
       const today = eventsOn(S.todayEvents, S.today);
       const tmr = eventsOn(S.todayEvents, addDays(S.today, 1));
-      body = (today.length ? today.map((e) =>
-        '<div class="ev"><div class="bar"' + (e.color ? ' style="background:' + h(e.color) + '"' : '') + '></div><div><div class="time">' + evTime(e) + '</div><div class="title">' + h(e.title) + '</div></div></div>').join('')
-        : '<div class="empty">오늘 일정이 없어요.</div>') +
+      const canMeet = !!(S.folders && S.folders.meetings);
+      body = (today.length ? today.map((e, i) => {
+        const note = canMeet ? eventNoteButton(e, i) : '';
+        return '<div class="ev"><div class="bar"' + (e.color ? ' style="background:' + h(e.color) + '"' : '') + '></div><div class="ev-body"><div class="time">' + evTime(e) + '</div><div class="title">' + h(e.title) + '</div></div>' + note + '</div>';
+      }).join('') : '<div class="empty">오늘 일정이 없어요.</div>') +
+        (!canMeet ? '' : S.newMeeting && S.newMeeting.where === 'events' ? '<div class="ev-new">' + newMeetingForm(S.today) + '</div>' :
+          '<button type="button" class="btn ev-add" data-new-meeting="' + S.today + '">+ 일정에 없는 미팅 노트</button>') +
         '<div class="ev-foot">내일 · ' + (tmr.length ? h(tmr[0].title) + (tmr.length > 1 ? ' 외 ' + (tmr.length - 1) + '개' : '') : '일정 없음') + '</div>';
     }
     $('#events').innerHTML = '<div class="card-head"><h2 id="events-h">오늘 일정</h2><span class="sub">구글 캘린더</span></div>' + body;
@@ -407,6 +529,11 @@
   // 기본은 로그 한 장(열어 둔 날, 없으면 오늘). 「전체 로그」를 누르면 있는 로그 전부를 날짜 내림차순 목록으로.
   function renderLogs() {
     const el = $('#logs');
+    if (S.openMeeting) {
+      const m = S.meetings.find((x) => x.id === S.openMeeting);
+      if (m) { el.innerHTML = meetingHtml(m); return; }
+      S.openMeeting = null;
+    }
     if (!S.showList) { el.innerHTML = detailHtml(S.openDate || S.today); return; }
     const rows = [];
     const dates = S.logs.map((l) => l.date);
@@ -452,6 +579,46 @@
 
   // 로그에서 쓰는 칸은 오늘의 「내 한 줄」 · 「오늘의 일기」뿐. 할 일 · 아이디어는 위 빠른 입력으로만 더하고,
   // 할 일 고치기 · 지우기는 할 일 카드에서 한다(여기서는 체크만). 아이디어는 다른 데 보이지 않아 여기서 고치고 지운다.
+  // 미팅 노트 한 장: 속성 · Summary · Takeaways는 바로 고치고, Next Steps는 체크 · 고치기 · 지우기 · 더하기.
+  // 그 밖의 칸(예: 유의사항)은 읽기만 — 옵시디언에서 고친다.
+  function meetingHtml(m) {
+    const f = S.files[m.id] || {};
+    const fm = f.fm || {};
+    const secs = f.parsed ? f.parsed.sections : [];
+    const info = meetingInfo(m);
+    const str = (v) => (Array.isArray(v) ? v.join(', ') : v || '');
+    const val = (kind, name, cur) => {
+      const k = m.id + '|' + kind + '|' + name;
+      if (kind === 'sec' && !(k in S.mbase)) S.mbase[k] = cur;
+      return k in S.mdrafts ? S.mdrafts[k] : cur;
+    };
+    const input = (name, label, type, cur, ph, wide) => '<label class="mf' + (wide ? ' wide' : '') + '"><span>' + label + '</span><input class="field" type="' + type + '" data-mfield="' + h(m.id + '|fm|' + name) + '" value="' + h(val('fm', name, cur)) + '"' + (ph ? ' placeholder="' + h(ph) + '"' : '') + '></label>';
+    const st = val('fm', 'status', str(fm.status));
+    const opts = MEET_STATUS.concat(st && !MEET_STATUS.includes(st) ? [st] : []);
+    const fields = '<div class="mf-grid">' +
+      input('meeting_at', '회의 시각', 'datetime-local', typeof fm.meeting_at === 'string' ? fm.meeting_at.slice(0, 16) : '') +
+      '<label class="mf"><span>상태</span><select class="field" data-mfield="' + h(m.id + '|fm|status') + '">' +
+      (st ? '' : '<option value="" selected>—</option>') + opts.map((s) => '<option' + (s === st ? ' selected' : '') + '>' + h(s) + '</option>').join('') + '</select></label>' +
+      input('attendees', '참석자', 'text', str(fm.attendees), '쉼표로 나눠서 — Kris Yu, Paul', true) +
+      input('asset', '자산', 'text', str(fm.asset), '300 Grant · Webster') +
+      input('project', '프로젝트', 'text', str(fm.project), '') + '</div>';
+    const textSec = (name) => {
+      const id = 'mt-' + name.toLowerCase();
+      return '<div class="sec"><label for="' + id + '"><h3>' + name + '</h3></label><textarea class="field short" id="' + id + '" data-mfield="' + h(m.id + '|sec|' + name) + '">' +
+        h(val('sec', name, MD.getSectionText(f.text || '', name))) + '</textarea></div>';
+    };
+    const ns = secs.find((s) => s.name === 'Next Steps') || { name: 'Next Steps', isList: false, items: [] };
+    const next = listSecHtml(ns, m).replace(/<\/div>$/, '') +
+      '<form class="item-add" data-meet-add="' + h(m.id) + '"><label for="meet-add-input" class="sr-only">Next Step 추가</label>' +
+      '<input class="field" id="meet-add-input" type="text" placeholder="할 일 추가" enterkeyhint="done"><button class="btn" type="submit">추가</button></form></div>';
+    const rest = secs.filter((s) => !['Summary', 'Takeaways', 'Next Steps'].includes(s.name)).map((s) => secHtml(s, m, false)).filter(Boolean).join('');
+    return '<div class="detail">' +
+      '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button></span>' +
+      '<div class="meta"><span id="save-label">' + h(S.saveLabel) + '</span><a href="' + h(obsidianUrl(m.title, C.MEETINGS_PATH)) + '">옵시디언에서 열기</a></div></div>' +
+      '<div><div class="eyebrow">미팅 노트' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
+      fields + textSec('Summary') + textSec('Takeaways') + next + rest + '</div>';
+  }
+
   const KEEP_EMPTY = ['남은 일', '새로운 아이디어'];
   function secHtml(s, l, isToday) {
     const head = '<h3>' + h(s.name) + '</h3>';
@@ -553,10 +720,12 @@
       sum = '<div class="day-sum"><div class="hd">' + kor(sel) + '</div>' +
         (evs.length ? evs.map((e) => '<div><span class="mono">' + evTime(e) + '</span> ' + h(e.title) + '</div>').join('') : '<div class="hint">일정 없음</div>') +
         '<div class="hd sub">미팅 노트</div>' +
-        (ms.length ? ms.map((x) => '<a class="meet-row" href="' + h(obsidianUrl(x.m.title, C.MEETINGS_PATH)) + '" title="옵시디언에서 열기">' +
+        (ms.length ? ms.map((x) => '<button type="button" class="meet-row" data-meeting="' + h(x.m.id) + '" title="미팅 노트 보기">' +
           '<span class="mono">' + (x.time || '--:--') + '</span><span class="mt"><b>' + h(x.topic) + '</b>' +
           (x.who.length || x.open ? '<small>' + h(x.who.join(' · ')) + (x.who.length && x.open ? ' · ' : '') + (x.open ? '할 일 ' + x.open : '') + '</small>' : '') +
-          '</span>' + ICON.out + '</a>').join('') : '<div class="hint">미팅 노트 없음</div>') +
+          '</span>' + ICON.right + '</button>').join('') : '<div class="hint">미팅 노트 없음</div>') +
+        (!S.folders || !S.folders.meetings ? '' : S.newMeeting && S.newMeeting.where === 'cal' && S.newMeeting.date === sel ? newMeetingForm(sel) :
+          '<button type="button" class="btn" data-new-meeting="' + sel + '">+ 미팅 노트 쓰기</button>') +
         '</div>';
     }
     $('#calendar').innerHTML =
@@ -567,12 +736,21 @@
       '<div class="legend"><span><i></i>안 한 할 일이 남은 날</span><span><i class="evm"></i>일정</span><span><i class="mtm"></i>미팅 노트</span></div>' + sum;
   }
 
+  function newMeetingForm(date) {
+    const t = date === S.today ? timeHM(new Date()) : '09:00';
+    return '<form class="meet-new" data-meet-new="' + date + '">' +
+      '<input class="field" name="topic" id="meet-topic" type="text" placeholder="주제 — 파일 이름이 돼요" aria-label="미팅 주제" required>' +
+      '<div class="row"><input class="field" name="time" type="time" value="' + t + '" aria-label="회의 시각">' +
+      '<input class="field" name="who" type="text" placeholder="참석자 (쉼표로)" aria-label="참석자"></div>' +
+      '<div class="row"><button class="btn primary" type="submit">만들기</button><button class="btn" type="button" data-meet-cancel>취소</button></div></form>';
+  }
+
   function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); }
 
   // ---------- 조작 ----------
   function openLog(date) {
     flushFields();
-    S.openDate = date; S.showList = false; S.tab = 'log';
+    S.openDate = date; S.showList = false; S.tab = 'log'; S.openMeeting = null;
     renderHeader(); renderLogs();
     $('#logs').scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
@@ -584,7 +762,19 @@
       if (t.dataset.kind) { S.kind = t.dataset.kind; renderHeader(); $('#quick-input').focus(); }
       else if (t.dataset.done) { S.showDone = t.dataset.done === '1'; renderTodos(); }
       else if (t.dataset.open) openLog(t.dataset.open);
-      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.showList = true; S.editItem = null; renderTodos(); renderLogs(); }
+      else if (t.dataset.meeting) openMeeting(t.dataset.meeting);
+      else if ('meetClose' in t.dataset) closeMeeting();
+      else if (t.dataset.newMeeting) {
+        S.newMeeting = { date: t.dataset.newMeeting, where: t.closest('#events') ? 'events' : 'cal' };
+        renderEvents(); renderCalendar();
+        const i = $('#meet-topic'); if (i) i.focus();
+      }
+      else if ('meetCancel' in t.dataset) { S.newMeeting = null; renderEvents(); renderCalendar(); }
+      else if (t.dataset.eventNote) {
+        const ev = eventsOn(S.todayEvents, S.today)[Number(t.dataset.eventNote)];
+        if (ev) { t.disabled = true; createMeeting(S.today, ev.title, ev.allDay ? '' : timeHM(new Date(ev.start)), (ev.who || []).join(', ')).catch(fail).finally(() => { t.disabled = false; }); }
+      }
+      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.openMeeting = null; S.showList = true; S.editItem = null; renderTodos(); renderLogs(); }
       else if (t.dataset.itemEdit) {
         S.editItem = t.dataset.itemEdit; S.editWhere = t.closest('#todos') ? 'todos' : 'logs';
         renderTodos(); renderLogs();
@@ -596,7 +786,11 @@
         const r = itemRef(t.dataset.itemDel);
         if (r && window.confirm('이 ' + r.word + '을 지울까요?')) changeItem(t.dataset.itemDel, null);
       }
-      else if (t.dataset.tabBtn) { S.tab = t.dataset.tabBtn; if (S.tab !== 'log') { flushFields(); } renderHeader(); window.scrollTo(0, 0); }
+      else if (t.dataset.tabBtn) {
+        S.tab = t.dataset.tabBtn; flushFields();
+        if (S.openMeeting) { S.openMeeting = null; S.meetFrom = null; renderLogs(); }
+        renderHeader(); window.scrollTo(0, 0);
+      }
       else if (t.dataset.month) {
         const [y, m] = S.month; const n = m + Number(t.dataset.month);
         S.month = n < 1 ? [y - 1, 12] : n > 12 ? [y + 1, 1] : [y, n];
@@ -614,10 +808,12 @@
     document.addEventListener('input', (e) => {
       const f = e.target;
       if (f.dataset && f.dataset.field) onField(f.dataset.field, f.value);
+      else if (f.dataset && f.dataset.mfield) onMeetField(f.dataset.mfield, f.value);
     });
     document.addEventListener('focusout', (e) => {
       const f = e.target;
       if (f.dataset && f.dataset.field && f.dataset.field in S.drafts) { clearTimeout(timers[f.dataset.field]); saveField(f.dataset.field); }
+      if (f.dataset && f.dataset.mfield && f.dataset.mfield in S.mdrafts) saveMeetField(f.dataset.mfield);
     });
     document.addEventListener('submit', (e) => {
       const f = e.target;
@@ -628,6 +824,18 @@
         if (!r || v === r.it.text) { S.editItem = null; renderTodos(); renderLogs(); return; }
         if (!v) { if (window.confirm('비워 두면 이 ' + r.word + '을 지워요. 지울까요?')) changeItem(f.dataset.itemSave, null); return; }
         changeItem(f.dataset.itemSave, v);
+      } else if (f.dataset.meetNew) {
+        e.preventDefault();
+        const btn = f.querySelector('[type=submit]');
+        btn.disabled = true;
+        createMeeting(f.dataset.meetNew, f.elements.topic.value, f.elements.time.value, f.elements.who.value)
+          .catch(fail).finally(() => { btn.disabled = false; });
+      } else if (f.dataset.meetAdd) {
+        e.preventDefault();
+        const inp = f.querySelector('input');
+        const v = inp.value;
+        inp.value = '';
+        addNextStep(f.dataset.meetAdd, v);
       }
     });
     document.addEventListener('keydown', (e) => {
@@ -657,7 +865,7 @@
     S.today = dateKey(new Date());
     try {
       await loadVault();
-      S.base = {};
+      S.base = {}; S.mbase = {};
       renderAll();
       await loadEvents();
       renderEvents(); renderCalendar();

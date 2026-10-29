@@ -277,6 +277,25 @@
     return lines.join(eol);
   }
 
+  // 프론트매터 한 칸을 「key: value」 한 줄로 바꾼다(줄마다 - 로 이어진 목록도 함께). 칸이 없으면 닫는 --- 앞에 더한다.
+  function setFrontmatter(text, key, value) {
+    const { lines, eol } = splitLines(text);
+    if (lines[0] !== '---') return text;
+    const end = lines.indexOf('---', 1);
+    if (end < 0) return text;
+    const line = key + ':' + (value === '' ? ' ' : ' ' + value);
+    for (let i = 1; i < end; i++) {
+      if (lines[i].startsWith(key + ':')) {
+        let n = 1;
+        while (i + n < end && /^\s+-\s/.test(lines[i + n])) n++;
+        lines.splice(i, n, line);
+        return lines.join(eol);
+      }
+    }
+    lines.splice(end, 0, line);
+    return lines.join(eol);
+  }
+
   function touchModified(text, stamp) {
     const { lines, eol } = splitLines(text);
     if (lines[0] !== '---') return text;
@@ -354,6 +373,6 @@
     return { text: String(text).slice(0, m.index), md: m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') };
   }
 
-  const api = { frontmatter, inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
+  const api = { frontmatter, setFrontmatter, inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);
