@@ -250,7 +250,8 @@ button.meet-row { border: 0; font: inherit; text-align: left; cursor: pointer; w
   .grid .card { display: none; }
   body[data-tab="home"] .grid [data-tab="home"],
   body[data-tab="log"] .grid [data-tab="log"],
-  body[data-tab="cal"] .grid [data-tab="cal"] { display: block; }
+  body[data-tab="cal"] .grid [data-tab="cal"],
+  body[data-tab="meet"] .grid [data-tab="meet"] { display: block; }
   body[data-tab="home"] #events { order: -1; }
   .card { padding: 16px; }
   .quick { padding: 8px; gap: 8px; }
@@ -302,3 +303,20 @@ textarea.field.short { min-height: 120px; }
 .ev .ev-note.has { background: var(--idea-soft); color: var(--idea-soft-ink); border-color: transparent; }
 .ev-add { margin-top: 10px; width: 100%; }
 .ev-new { margin-top: 10px; }
+.todo.idea .txt { flex: 1 1 auto; min-width: 0; padding: 12px 2px; }
+
+/* 미팅 노트 목록 */
+.ev-add.top { margin: 0 0 8px; }
+.mlist { display: flex; flex-direction: column; max-height: 520px; overflow-y: auto; }
+.mrow { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 6px; border: 0; border-top: 1px solid var(--line-soft); background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 0; }
+.mrow:hover { background: var(--ground); }
+.mrow .when { flex: 0 0 48px; display: flex; flex-direction: column; }
+.mrow .when b { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+.mrow .when span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.mrow .body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mrow .body b { font-weight: 600; overflow-wrap: anywhere; }
+.mrow .body small { font-size: 12px; color: var(--muted); }
+.mrow .body small i { font-style: normal; color: var(--idea-soft-ink); }
+.mrow .badges { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: none; }
+.mrow > svg { flex: none; color: var(--muted); }
+.ev-add { justify-content: center; }

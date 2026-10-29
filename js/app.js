@@ -16,13 +16,13 @@
   const S = {
     today: '', folders: null,
     logs: [],          // [{id, name, date, modifiedTime}] 날짜 내림차순
-    meetings: [],      // [{id, name, title, date, modifiedTime, meeting: true}] Meetings 폴더의 미팅 노트
+    meetings: [],      // [{id, name, title, date, modifiedTime, meeting: true}] Meetings 폴더의 미팅 미닛
     files: {},         // id → {text, modifiedTime, parsed}
     showDone: false, kind: 'todo', tab: 'home',
     openDate: null, showList: false, selDate: null, month: null,
     todayEvents: null, monthEvents: null, eventsError: false,
     busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null, editWhere: null,
-    openMeeting: null, meetFrom: null, newMeeting: null /* {date, where: 'cal' | 'events'} */, mdrafts: {}, mbase: {}
+    openMeeting: null, meetFrom: null, meetFilter: 'open', newMeeting: null /* {date, where: 'cal' | 'events'} */, mdrafts: {}, mbase: {}
   };
 
   // ---------- 날짜 (샌프란시스코 현지 시각) ----------
@@ -340,8 +340,8 @@
     putFile(f.id, text, f.modifiedTime);
     saveCache();
     S.newMeeting = null;
-    toast('미팅 노트를 만들었어요.');
-    renderEvents(); renderCalendar();
+    toast('미팅 미닛을 만들었어요.');
+    renderEvents(); renderCalendar(); renderMeetings();
     openMeeting(f.id);
   }
 
@@ -399,7 +399,7 @@
     if (kind === 'sec') S.mbase[key] = MD.getSectionText(next, name);
     if (S.mdrafts[key] === value) delete S.mdrafts[key];
     setSave('저장됨 · ' + timeHM(new Date()));
-    renderTodos(); renderCalendar();
+    renderTodos(); renderCalendar(); renderMeetings();
   }
 
   function openMeeting(id) {
@@ -448,7 +448,7 @@
 
   function sourceChip(log) {
     if (log.meeting) {
-      return '<button type="button" class="chip meet" data-meeting="' + h(log.id) + '" title="' + h(log.title) + ' 미팅 노트 보기">미팅' +
+      return '<button type="button" class="chip meet" data-meeting="' + h(log.id) + '" title="' + h(log.title) + ' 미팅 미닛 보기">미팅' +
         (log.date ? ' ' + md(log.date) : '') + ICON.out + '</button>';
     }
     return '<button type="button" class="chip' + (log.date === S.today ? ' today' : '') + '" data-open="' + log.date + '" title="' + h(log.date) + ' 데일리 로그 보기">' + md(log.date) + ICON.out + '</button>';
@@ -466,7 +466,34 @@
     document.querySelectorAll('[data-tab-btn]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.tabBtn === S.tab)));
   }
 
+  // 데일리 로그 「새로운 아이디어」의 불릿을 날짜 내림차순으로.
+  function allIdeas() {
+    const out = [];
+    S.logs.forEach((l) => {
+      const p = parsedOf(l);
+      const sec = p && p.sections.find((s) => s.name === '새로운 아이디어');
+      if (sec) sec.items.filter((it) => it.kind === 'bullet' && it.text.trim()).forEach((it) => out.push({ log: l, it }));
+    });
+    return out;
+  }
+
+  // 위 토글이 「아이디어」면 같은 카드에 아이디어 목록을 보인다(고치기 · 지우기).
+  function renderIdeas() {
+    const all = allIdeas();
+    const rows = all.map(({ log, it }) => {
+      const key = log.id + ':' + it.line;
+      if (S.editItem === key && S.editWhere === 'todos') return '<div class="todo editing">' + editFormHtml(key, it.text, '아이디어') + '</div>';
+      return '<div class="todo idea' + (S.busy.has(key) ? ' busy' : '') + '">' +
+        '<span class="txt" style="padding-left:' + Math.min(it.depth, 4) * 16 + 'px">' + show(it.text) + '</span>' +
+        itemButtons(key, '아이디어') + sourceChip(log) + '</div>';
+    }).join('');
+    $('#todos').innerHTML =
+      '<div class="card-head"><h2 id="todos-h">아이디어</h2><span class="sub">전체 ' + all.length + '개</span></div>' +
+      '<div class="todo-list">' + (rows || '<div class="empty">아직 아이디어가 없어요.</div>') + '</div>';
+  }
+
   function renderTodos() {
+    if (S.kind === 'idea') return renderIdeas();
     const all = allTasks();
     const open = all.filter((x) => !x.t.done);
     const list = S.showDone ? all : open;
@@ -504,7 +531,7 @@
     const m = noteForEvent(e);
     return m
       ? '<button type="button" class="btn sm ev-note has" data-meeting="' + h(m.id) + '">노트 열기</button>'
-      : '<button type="button" class="btn sm ev-note" data-event-note="' + i + '" aria-label="' + h(e.title) + ' 미팅 노트 만들기">+ 노트</button>';
+      : '<button type="button" class="btn sm ev-note" data-event-note="' + i + '" aria-label="' + h(e.title) + ' 미팅 미닛 만들기">+ 노트</button>';
   }
 
   function renderEvents() {
@@ -520,7 +547,7 @@
         return '<div class="ev"><div class="bar"' + (e.color ? ' style="background:' + h(e.color) + '"' : '') + '></div><div class="ev-body"><div class="time">' + evTime(e) + '</div><div class="title">' + h(e.title) + '</div></div>' + note + '</div>';
       }).join('') : '<div class="empty">오늘 일정이 없어요.</div>') +
         (!canMeet ? '' : S.newMeeting && S.newMeeting.where === 'events' ? '<div class="ev-new">' + newMeetingForm(S.today) + '</div>' :
-          '<button type="button" class="btn ev-add" data-new-meeting="' + S.today + '">+ 일정에 없는 미팅 노트</button>') +
+          '<button type="button" class="btn ev-add" data-new-meeting="' + S.today + '">+ 일정에 없는 미팅 미닛</button>') +
         '<div class="ev-foot">내일 · ' + (tmr.length ? h(tmr[0].title) + (tmr.length > 1 ? ' 외 ' + (tmr.length - 1) + '개' : '') : '일정 없음') + '</div>';
     }
     $('#events').innerHTML = '<div class="card-head"><h2 id="events-h">오늘 일정</h2><span class="sub">구글 캘린더</span></div>' + body;
@@ -615,7 +642,7 @@
     return '<div class="detail">' +
       '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button></span>' +
       '<div class="meta"><span id="save-label">' + h(S.saveLabel) + '</span><a href="' + h(obsidianUrl(m.title, C.MEETINGS_PATH)) + '">옵시디언에서 열기</a></div></div>' +
-      '<div><div class="eyebrow">미팅 노트' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
+      '<div><div class="eyebrow">미팅 미닛' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
       fields + textSec('Summary') + textSec('Takeaways') + next + rest + '</div>';
   }
 
@@ -708,7 +735,7 @@
       if (n < 1 || n > days) { cells += '<span class="day out" aria-hidden="true"></span>'; continue; }
       const d = y + '-' + String(m).padStart(2, '0') + '-' + String(n).padStart(2, '0');
       const cls = 'day' + (d === S.today ? ' today' : '') + (d === S.selDate && d !== S.today ? ' sel' : '');
-      const label = m + '월 ' + n + '일' + (todoDays.has(d) ? ', 안 한 할 일 있음' : '') + (evDays.has(d) ? ', 일정 있음' : '') + (meetDays.has(d) ? ', 미팅 노트 있음' : '');
+      const label = m + '월 ' + n + '일' + (todoDays.has(d) ? ', 안 한 할 일 있음' : '') + (evDays.has(d) ? ', 일정 있음' : '') + (meetDays.has(d) ? ', 미팅 미닛 있음' : '');
       cells += '<button type="button" class="' + cls + '" data-day="' + d + '" aria-label="' + label + '">' + n +
         '<span class="marks">' + (todoDays.has(d) ? '<span class="m"></span>' : '') + (evDays.has(d) ? '<span class="m evm"></span>' : '') + (meetDays.has(d) ? '<span class="m mtm"></span>' : '') + '</span></button>';
     }
@@ -719,13 +746,13 @@
       const ms = meetingsOn(sel);
       sum = '<div class="day-sum"><div class="hd">' + kor(sel) + '</div>' +
         (evs.length ? evs.map((e) => '<div><span class="mono">' + evTime(e) + '</span> ' + h(e.title) + '</div>').join('') : '<div class="hint">일정 없음</div>') +
-        '<div class="hd sub">미팅 노트</div>' +
-        (ms.length ? ms.map((x) => '<button type="button" class="meet-row" data-meeting="' + h(x.m.id) + '" title="미팅 노트 보기">' +
+        '<div class="hd sub">미팅 미닛</div>' +
+        (ms.length ? ms.map((x) => '<button type="button" class="meet-row" data-meeting="' + h(x.m.id) + '" title="미팅 미닛 보기">' +
           '<span class="mono">' + (x.time || '--:--') + '</span><span class="mt"><b>' + h(x.topic) + '</b>' +
           (x.who.length || x.open ? '<small>' + h(x.who.join(' · ')) + (x.who.length && x.open ? ' · ' : '') + (x.open ? '할 일 ' + x.open : '') + '</small>' : '') +
-          '</span>' + ICON.right + '</button>').join('') : '<div class="hint">미팅 노트 없음</div>') +
+          '</span>' + ICON.right + '</button>').join('') : '<div class="hint">미팅 미닛 없음</div>') +
         (!S.folders || !S.folders.meetings ? '' : S.newMeeting && S.newMeeting.where === 'cal' && S.newMeeting.date === sel ? newMeetingForm(sel) :
-          '<button type="button" class="btn" data-new-meeting="' + sel + '">+ 미팅 노트 쓰기</button>') +
+          '<button type="button" class="btn" data-new-meeting="' + sel + '">+ 미팅 미닛 쓰기</button>') +
         '</div>';
     }
     $('#calendar').innerHTML =
@@ -733,7 +760,7 @@
       '<button type="button" class="icon-btn" data-month="-1" aria-label="이전 달">' + ICON.left + '</button>' +
       '<button type="button" class="icon-btn" data-month="1" aria-label="다음 달">' + ICON.right + '</button></div></div>' +
       '<div class="cal">' + cells + '</div>' +
-      '<div class="legend"><span><i></i>안 한 할 일이 남은 날</span><span><i class="evm"></i>일정</span><span><i class="mtm"></i>미팅 노트</span></div>' + sum;
+      '<div class="legend"><span><i></i>안 한 할 일이 남은 날</span><span><i class="evm"></i>일정</span><span><i class="mtm"></i>미팅 미닛</span></div>' + sum;
   }
 
   function newMeetingForm(date) {
@@ -745,7 +772,36 @@
       '<div class="row"><button class="btn primary" type="submit">만들기</button><button class="btn" type="button" data-meet-cancel>취소</button></div></form>';
   }
 
-  function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); }
+  // 미팅 노트 목록: 회의 날짜 · 시각 내림차순. 「진행중」은 상태가 완료 · 중단이 아닌 것.
+  const MEET_CLOSED = ['완료', '중단'];
+  function renderMeetings() {
+    const el = $('#meetings');
+    if (!el) return;
+    if (!S.folders || !S.folders.meetings) { el.innerHTML = ''; return; }
+    const all = S.meetings.map((m) => {
+      const fm = (S.files[m.id] && S.files[m.id].fm) || {};
+      return Object.assign({ m, status: typeof fm.status === 'string' ? fm.status : '', asset: typeof fm.asset === 'string' ? fm.asset : '' }, meetingInfo(m));
+    }).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
+    const open = all.filter((x) => !MEET_CLOSED.includes(x.status));
+    const list = S.meetFilter === 'all' ? all : open;
+    const rows = list.map((x) =>
+      '<button type="button" class="mrow" data-meeting="' + h(x.m.id) + '">' +
+      '<span class="when"><b>' + (x.date ? md(x.date) : '--/--') + '</b><span>' + (x.time || '') + '</span></span>' +
+      '<span class="body"><b>' + h(x.topic) + '</b>' +
+      (x.who.length || x.asset ? '<small>' + h(x.who.join(' · ')) + (x.who.length && x.asset ? ' · ' : '') + (x.asset ? '<i>' + h(x.asset) + '</i>' : '') + '</small>' : '') + '</span>' +
+      '<span class="badges">' + (x.open ? '<span class="badge">할 일 ' + x.open + '</span>' : '') +
+      (x.status ? '<span class="badge ' + (MEET_CLOSED.includes(x.status) ? 'zero' : 'idea') + '">' + h(x.status) + '</span>' : '') + '</span>' +
+      ICON.right + '</button>').join('');
+    el.innerHTML = '<div class="card-head"><h2 id="meet-h">미팅 미닛</h2>' +
+      '<div class="seg small" role="group" aria-label="미팅 보기">' +
+      '<button type="button" data-meet-filter="open" aria-pressed="' + (S.meetFilter !== 'all') + '">진행중 ' + open.length + '</button>' +
+      '<button type="button" data-meet-filter="all" aria-pressed="' + (S.meetFilter === 'all') + '">전체 ' + all.length + '</button></div></div>' +
+      (S.newMeeting && S.newMeeting.where === 'meetings' ? '<div class="ev-new">' + newMeetingForm(S.today) + '</div>' :
+        '<button type="button" class="btn ev-add top" data-new-meeting="' + S.today + '">+ 새 미팅 미닛</button>') +
+      '<div class="mlist">' + (rows || '<div class="empty">' + (S.meetFilter === 'all' ? '미팅 미닛이 없어요.' : '진행 중인 미팅이 없어요.') + '</div>') + '</div>';
+  }
+
+  function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); renderMeetings(); }
 
   // ---------- 조작 ----------
   function openLog(date) {
@@ -759,17 +815,18 @@
     document.addEventListener('click', (e) => {
       const t = e.target.closest('button, a');
       if (!t) return;
-      if (t.dataset.kind) { S.kind = t.dataset.kind; renderHeader(); $('#quick-input').focus(); }
+      if (t.dataset.kind) { S.kind = t.dataset.kind; S.editItem = null; renderHeader(); renderTodos(); $('#quick-input').focus(); }
       else if (t.dataset.done) { S.showDone = t.dataset.done === '1'; renderTodos(); }
       else if (t.dataset.open) openLog(t.dataset.open);
       else if (t.dataset.meeting) openMeeting(t.dataset.meeting);
       else if ('meetClose' in t.dataset) closeMeeting();
       else if (t.dataset.newMeeting) {
-        S.newMeeting = { date: t.dataset.newMeeting, where: t.closest('#events') ? 'events' : 'cal' };
-        renderEvents(); renderCalendar();
+        S.newMeeting = { date: t.dataset.newMeeting, where: t.closest('#events') ? 'events' : t.closest('#meetings') ? 'meetings' : 'cal' };
+        renderEvents(); renderCalendar(); renderMeetings();
         const i = $('#meet-topic'); if (i) i.focus();
       }
-      else if ('meetCancel' in t.dataset) { S.newMeeting = null; renderEvents(); renderCalendar(); }
+      else if ('meetCancel' in t.dataset) { S.newMeeting = null; renderEvents(); renderCalendar(); renderMeetings(); }
+      else if (t.dataset.meetFilter) { S.meetFilter = t.dataset.meetFilter; renderMeetings(); }
       else if (t.dataset.eventNote) {
         const ev = eventsOn(S.todayEvents, S.today)[Number(t.dataset.eventNote)];
         if (ev) { t.disabled = true; createMeeting(S.today, ev.title, ev.allDay ? '' : timeHM(new Date(ev.start)), (ev.who || []).join(', ')).catch(fail).finally(() => { t.disabled = false; }); }
