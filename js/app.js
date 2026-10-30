@@ -485,7 +485,7 @@
       const key = log.id + ':' + it.line;
       if (S.editItem === key && S.editWhere === 'todos') return '<div class="todo editing">' + editFormHtml(key, it.text, '아이디어') + '</div>';
       return '<div class="todo idea' + (S.busy.has(key) ? ' busy' : '') + '">' +
-        '<span class="txt" style="padding-left:' + Math.min(it.depth, 4) * 16 + 'px">' + show(it.text) + '</span>' +
+        '<span class="txt" title="' + h(MD.display(it.text)) + '" style="padding-left:' + Math.min(it.depth, 4) * 16 + 'px">' + show(it.text) + '</span>' +
         itemButtons(key, '아이디어') + sourceChip(log) + '</div>';
     }).join('');
     $('#todos').innerHTML =
@@ -503,7 +503,8 @@
       if (S.editItem === key && S.editWhere === 'todos') return '<div class="todo editing">' + editFormHtml(key, t.text, '할 일') + '</div>';
       return '<div class="todo' + (t.done ? ' done' : '') + (S.busy.has(key) ? ' busy' : '') + '">' +
         '<label><input type="checkbox" data-toggle="' + h(log.id) + '" data-line="' + t.line + '"' + (t.done ? ' checked' : '') + (S.busy.has(key) ? ' disabled' : '') + '>' +
-        '<span class="txt" style="padding-left:' + Math.min(t.indent, 8) * 4 + 'px">' + show(t.text) + (t.by === 'claude' ? ' <span class="who">Claude</span>' : '') + '</span></label>' +
+        '<span class="txt" title="' + h(MD.display(t.text)) + '" style="padding-left:' + Math.min(t.indent, 8) * 4 + 'px">' + show(t.text) + '</span>' +
+        (t.by === 'claude' ? '<span class="who">Claude</span>' : '') + '</label>' +
         itemButtons(key, '할 일') +
         sourceChip(log) +
         '</div>';
