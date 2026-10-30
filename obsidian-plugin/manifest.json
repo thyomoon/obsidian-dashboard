@@ -1,0 +1,9 @@
+{
+  "id": "log-task-mover",
+  "name": "데일리 로그 할 일 옮기기",
+  "version": "1.0.0",
+  "minAppVersion": "1.4.0",
+  "description": "남은 일을 체크하면 체크한 날 로그의 한 일로 옮긴다. 대시보드와 같은 규칙.",
+  "author": "Taylor",
+  "isDesktopOnly": false
+}
