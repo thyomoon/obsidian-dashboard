@@ -84,6 +84,7 @@ data = {'template': (v / 'Templates/데일리 로그.md').read_text(encoding='ut
         'meetTemplate': (v / 'Templates/Meeting Minutes.md').read_text(encoding='utf-8'),
         'meetings': [{'name': today + ' 0900_예시 회의록 — 마크다운 미리보기.md', 'text': DEMO.replace('TODAY', today)}] +
                     [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in meets],
+        'practice': next((p.read_text(encoding='utf-8') for p in [v / '2. Area of Responsibility/My Think/3. 연습 카드/연습 카드.md'] if p.exists()), None),
         'logs': [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in logs]}
 pathlib.Path(sys.argv[2]).write_text('window.FIXTURES = ' + json.dumps(data, ensure_ascii=False) + ';', encoding='utf-8')
 EOF

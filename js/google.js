@@ -124,6 +124,12 @@
 
   function forgetFolders() { store.del('od.folders'); }
 
+  // 연습 카드는 없어도 된다 — 없으면 null. 나중에 생길 수 있어서 캐시하지 않는다. 대시보드는 읽기만 한다.
+  async function findPractice(vault) {
+    try { return await childPath(vault, C.PRACTICE_PATH, true); }
+    catch (e) { if (e instanceof AuthError) throw e; return null; }
+  }
+
   async function listLogs() {
     const files = await list("'" + esc(logFolderId) + "' in parents and trashed=false and mimeType!='" + FOLDER + "'", 'id,name,modifiedTime');
     const logs = files
@@ -215,5 +221,5 @@
     return [].concat(...all).sort((a, b) => (a.start < b.start ? -1 : 1));
   }
 
-  window.G = { login, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, meta, readText, writeText, createLog, createMeeting, events };
+  window.G = { login, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, findPractice, meta, readText, writeText, createLog, createMeeting, events };
 })();

@@ -103,6 +103,8 @@
     }));
     S.logs = logs;
     S.meetings = meetings;
+    const pid = await G.findPractice(S.folders.vault);
+    S.practice = pid ? await G.readText(pid) : null;
     Object.keys(S.files).forEach((id) => { if (!logs.some((l) => l.id === id) && !meetings.some((m) => m.id === id)) delete S.files[id]; });
     saveCache();
     S.lastLoad = Date.now();
@@ -866,7 +868,29 @@
       '<div class="mlist">' + (rows || '<div class="empty">' + (S.meetFilter === 'all' ? '미팅 미닛이 없어요.' : '할 일이 남은 미팅이 없어요.') + '</div>') + '</div>';
   }
 
-  function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); renderMeetings(); }
+  // 연습 카드: 「기억할 말」 중 하루 한 줄을 크게 보이고, 아래에 다른 칸을 목록으로. 읽기만 한다 — 고치는 건 옵시디언에서.
+  function renderPractice() {
+    const el = $('#practice');
+    if (!el) return;
+    el.hidden = !S.practice;
+    if (!S.practice) { el.innerHTML = ''; return; }
+    const items = (s) => s.items.filter((x) => x.kind === 'bullet' || x.kind === 'task');
+    const secs = MD.parseLog(S.practice).sections.filter((s) => s.name !== '출처' && items(s).length);
+    const words = secs.find((s) => s.name === '기억할 말');
+    const pool = words ? items(words).filter((x) => x.depth === 0) : [];
+    const day = Math.floor(Date.parse(S.today + 'T00:00:00Z') / 864e5);
+    const pick = pool.length ? pool[day % pool.length] : null;
+    const list = (s) => '<ul class="plist">' + items(s).map((x) => '<li' + (x.depth ? ' class="sub"' : '') + '>' + MD.inlineHtml(x.text) + '</li>').join('') + '</ul>';
+    const file = C.PRACTICE_PATH[C.PRACTICE_PATH.length - 1].replace(/\.md$/, '');
+    el.innerHTML = '<div class="card-head"><h2 id="practice-h">연습 카드</h2>' +
+      '<a class="sub" href="' + h(obsidianUrl(file, C.PRACTICE_PATH.slice(0, -1))) + '">옵시디언에서 고치기</a></div>' +
+      (pick ? '<blockquote class="pquote"><small>오늘의 한 줄</small>' + MD.inlineHtml(pick.text) + '</blockquote>' : '') +
+      '<div class="pbody" tabindex="0" aria-label="연습 카드 목록">' + secs.map((s) => s === words
+        ? '<details class="psec"><summary>' + h(s.name) + ' ' + pool.length + '</summary>' + list(s) + '</details>'
+        : '<div class="psec"><h3>' + h(s.name) + '</h3>' + list(s) + '</div>').join('') + '</div>';
+  }
+
+  function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); renderMeetings(); renderPractice(); }
 
   // ---------- 조작 ----------
   function openLog(date) {

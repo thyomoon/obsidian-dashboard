@@ -7,6 +7,7 @@
   files.tpl = { name: '데일리 로그.md', text: window.FIXTURES.template, modifiedTime: '2026-01-01T00:00:00Z' };
   files.mtpl = { name: 'Meeting Minutes.md', text: window.FIXTURES.meetTemplate, modifiedTime: '2026-01-01T00:00:00Z' };
   (window.FIXTURES.meetings || []).forEach((f, i) => { files['meet' + i] = { name: f.name, text: f.text, modifiedTime: '2026-01-01T00:00:00Z', meeting: true }; });
+  if (window.FIXTURES.practice) files.practice = { name: '연습 카드.md', text: window.FIXTURES.practice, modifiedTime: '2026-01-01T00:00:00Z' };
   const isLog = (id) => /^\d{4}-\d{2}-\d{2}\.md$/.test(files[id].name);
   class AuthError extends Error {}
   const tick = () => new Date().toISOString();
@@ -15,6 +16,7 @@
     AuthError,
     login() {}, logout() {}, takeTokenFromUrl() {}, token: () => 'demo', forgetFolders() {},
     findLogFolder: () => wait({ template: 'tpl', meetings: 'meet', meetTemplate: 'mtpl' }),
+    findPractice: () => wait(window.FIXTURES.practice ? 'practice' : null),
     listLogs: () => wait(Object.keys(files).filter(isLog).map((id) => ({ id, name: files[id].name, date: files[id].name.slice(0, 10), modifiedTime: files[id].modifiedTime }))),
     meta: (id) => wait({ id, modifiedTime: files[id].modifiedTime }),
     readText: (id) => wait(files[id].text),

@@ -253,6 +253,8 @@ button.meet-row { border: 0; font: inherit; text-align: left; cursor: pointer; w
   body[data-tab="cal"] .grid [data-tab="cal"],
   body[data-tab="meet"] .grid [data-tab="meet"] { display: block; }
   body[data-tab="home"] #events { order: -1; }
+  body[data-tab="home"] #practice { order: 9; }
+  body[data-tab="home"] #practice[hidden] { display: none; }
   .card { padding: 16px; }
   .quick { padding: 8px; gap: 8px; }
   .quick .seg { width: 100%; }
@@ -367,3 +369,17 @@ mark { background: color-mix(in srgb, #F5D04A 55%, transparent); color: inherit;
   .log-meet .mt { white-space: normal; }
 }
 .mrow .body small em.area { font-style: normal; display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--chip); color: var(--chip-ink); font-size: 11px; }
+
+/* 연습 카드 — 지갑에 넣어 다니는 메모처럼. 오늘의 한 줄을 크게, 나머지는 작은 목록 */
+.practice[hidden] { display: none; }
+.practice .card-head a.sub { color: var(--muted); }
+.pquote { margin: 0 0 4px; padding: 12px 14px; border-radius: 10px; background: var(--idea-soft); color: var(--idea-soft-ink); font-size: 17px; line-height: 1.5; font-weight: 600; display: flex; flex-direction: column; gap: 4px; }
+.pquote small { font-size: 11px; font-weight: 500; letter-spacing: .04em; opacity: .8; }
+.pbody { max-height: 200px; overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; border-top: 1px solid var(--line-soft); -webkit-mask-image: linear-gradient(to bottom, #000 85%, transparent); mask-image: linear-gradient(to bottom, #000 85%, transparent); }
+.pbody:focus-visible { outline: 2px solid var(--idea); outline-offset: 2px; }
+.pbody > :last-child { padding-bottom: 24px; }
+.psec { margin-top: 12px; }
+.psec h3, .psec summary { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 6px; }
+.psec summary { cursor: pointer; }
+.plist { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; font-size: 14px; line-height: 1.5; }
+.plist li.sub { list-style: circle; margin-left: 16px; font-size: 13px; color: var(--muted); }
