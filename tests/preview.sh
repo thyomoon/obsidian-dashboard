@@ -93,6 +93,7 @@ cat > "$TMP/js/clicks.js" <<'JS'
 (function () {
   const q = new URLSearchParams(location.search).get('click');
   if (!q) return;
+  window.confirm = () => true; // 미리보기에서는 확인 창을 늘 「확인」으로
   const steps = q.split('|');
   let i = 0;
   // 단계: "선택자" → 누르기, "선택자=>글" → 글 넣기, "submit:선택자" → 제출, "dump[:YYYY-MM-DD]" → 그날(기본 오늘) 로그 파일 내용만 화면에 보이기

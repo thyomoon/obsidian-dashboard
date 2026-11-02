@@ -248,7 +248,9 @@
       const it = sec.items.find((x) => x.line === line);
       if (it) return { id, it, word: it.kind === 'task' ? '할 일' : (LISTS[sec.name] ? LISTS[sec.name].word : '항목') };
     }
-    return null;
+    // 칸에 목록 아닌 줄(예: 콜아웃의 「(없음 — …)」)이 섞이면 칸 items가 비므로, 할 일은 전체 목록에서 찾는다.
+    const t = p.tasks.find((x) => x.line === line);
+    return t ? { id, it: t, word: '할 일' } : null;
   }
 
   // newText가 null이면 지운다.
@@ -933,7 +935,8 @@
       else if ('itemCancel' in t.dataset) { S.editItem = null; renderTodos(); renderLogs(); }
       else if (t.dataset.itemDel) {
         const r = itemRef(t.dataset.itemDel);
-        if (r && window.confirm('이 ' + r.word + '을 지울까요?')) changeItem(t.dataset.itemDel, null);
+        if (!r) toast('이 줄을 찾지 못했어요. 새로고침해 주세요.');
+        else if (window.confirm('이 ' + r.word + '을 지울까요?')) changeItem(t.dataset.itemDel, null);
       }
       else if (t.dataset.tabBtn) {
         S.tab = t.dataset.tabBtn; flushFields();
