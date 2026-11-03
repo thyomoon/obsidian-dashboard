@@ -43,6 +43,11 @@
   function weekday(key) { const [y, m, d] = key.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); }
   const md = (key) => key.slice(5).replace('-', '/');
   const kor = (key) => Number(key.slice(5, 7)) + '월 ' + Number(key.slice(8)) + '일 ' + WD[weekday(key)] + '요일';
+  // 맨 위 큰 제목만 영어로: Nov 3rd Tuesday
+  const MON_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const WD_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  const eng = (key) => MON_EN[Number(key.slice(5, 7)) - 1] + ' ' + ordinal(Number(key.slice(8))) + ' ' + WD_EN[weekday(key)];
 
   // ---------- 공통 ----------
   const h = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -459,7 +464,7 @@
 
   function renderHeader() {
     $('#eyebrow').textContent = '옵시디언 대시보드 · ' + S.today.replace(/-/g, ' · ');
-    $('#today-title').textContent = kor(S.today);
+    $('#today-title').textContent = eng(S.today);
     document.querySelectorAll('[data-kind]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === S.kind)));
     const narrow = window.matchMedia('(max-width: 760px)').matches;
     $('#quick-input').placeholder = S.kind === 'todo'
