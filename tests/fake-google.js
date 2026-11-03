@@ -14,7 +14,7 @@
   const wait = (v) => new Promise((r) => setTimeout(() => r(v), 30));
   window.G = {
     AuthError,
-    login() {}, logout() {}, takeTokenFromUrl() {}, token: () => 'demo', forgetFolders() {},
+    login() {}, canSilent: () => false, rememberUser() {}, logout() {}, takeTokenFromUrl() {}, token: () => 'demo', forgetFolders() {},
     findLogFolder: () => wait({ template: 'tpl', meetings: 'meet', meetTemplate: 'mtpl' }),
     findPractice: () => wait(window.FIXTURES.practice ? 'practice' : null),
     listLogs: () => wait(Object.keys(files).filter(isLog).map((id) => ({ id, name: files[id].name, date: files[id].name.slice(0, 10), modifiedTime: files[id].modifiedTime }))),

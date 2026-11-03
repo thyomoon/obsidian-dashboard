@@ -4,6 +4,7 @@
   'use strict';
   const C = window.CONFIG;
   const TOKEN_KEY = 'od.token';
+  const HINT_KEY = 'od.hint';
   const DRIVE = 'https://www.googleapis.com/drive/v3';
   const UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
   const CAL = 'https://www.googleapis.com/calendar/v3';
@@ -18,9 +19,15 @@
   // ---------- 로그인 (리디렉트 방식: 아이폰 홈 화면 앱에서도 팝업 없이 된다) ----------
   function redirectUri() { return location.origin + location.pathname; }
 
-  function login() {
+  // silent: 구글에 이미 로그인돼 있고 권한을 준 적이 있으면 화면 없이 새 토큰을 받아 온다(prompt=none).
+  // 토큰은 1시간짜리라, 끝나면 이걸로 조용히 다시 받는다. 안 되면 구글이 #error로 돌려보낸다.
+  function login(opts) {
+    const silent = !!(opts && opts.silent);
     const state = Math.random().toString(36).slice(2);
-    try { sessionStorage.setItem('od.state', state); } catch (e) { /* 무시 */ }
+    try {
+      sessionStorage.setItem('od.state', state);
+      if (silent) sessionStorage.setItem('od.silentAt', String(Date.now()));
+    } catch (e) { /* 무시 */ }
     const q = new URLSearchParams({
       client_id: C.CLIENT_ID,
       redirect_uri: redirectUri(),
@@ -29,11 +36,31 @@
       include_granted_scopes: 'true',
       state
     });
+    if (silent) q.set('prompt', 'none');
+    const hint = store.get(HINT_KEY);
+    if (hint) q.set('login_hint', hint);
     location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q.toString();
   }
 
-  // 로그인에서 돌아왔으면 주소의 #access_token을 꺼내 저장한다.
+  // 조용한 로그인을 30초 안에 이미 해 봤으면 다시 하지 않는다(실패하면 되풀이하지 않게).
+  function canSilent() {
+    let at = 0;
+    try { at = Number(sessionStorage.getItem('od.silentAt')) || 0; } catch (e) { return false; }
+    return Date.now() - at > 30000;
+  }
+
+  // 여러 구글 계정이 로그인된 브라우저에서도 조용한 로그인이 되게, 어느 계정인지 이 기기에 적어 둔다.
+  async function rememberUser() {
+    if (store.get(HINT_KEY)) return;
+    try {
+      const j = await (await call(DRIVE + '/about?fields=user(emailAddress)')).json();
+      if (j.user && j.user.emailAddress) store.set(HINT_KEY, j.user.emailAddress);
+    } catch (e) { /* 없어도 로그인은 된다 */ }
+  }
+
+  // 로그인에서 돌아왔으면 주소의 #access_token을 꺼내 저장한다. 조용한 로그인이 안 됐으면(#error) 주소만 지운다.
   function takeTokenFromUrl() {
+    if (location.hash.includes('error=')) { history.replaceState(null, '', redirectUri()); return; }
     if (!location.hash.includes('access_token')) return;
     const h = new URLSearchParams(location.hash.slice(1));
     let expected = null;
@@ -221,5 +248,5 @@
     return [].concat(...all).sort((a, b) => (a.start < b.start ? -1 : 1));
   }
 
-  window.G = { login, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, findPractice, meta, readText, writeText, createLog, createMeeting, events };
+  window.G = { login, canSilent, rememberUser, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, findPractice, meta, readText, writeText, createLog, createMeeting, events };
 })();

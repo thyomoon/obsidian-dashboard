@@ -60,7 +60,7 @@
   }
   function fail(err) {
     console.error(err);
-    if (err instanceof G.AuthError) { showLogin(err.message); return; }
+    if (err instanceof G.AuthError) { relogin(err.message); return; }
     toast(err.message || String(err));
     setStatus('err', '문제 생김');
   }
@@ -1029,6 +1029,12 @@
     if (msg) $('#login-msg').textContent = msg;
   }
 
+  // 토큰이 끝났으면 먼저 조용히 다시 받아 본다. 쓰다 만 글이 있거나 방금 해 봤는데 안 됐으면 로그인 화면.
+  function relogin(msg) {
+    if (G.canSilent() && !Object.keys(S.drafts).length && !Object.keys(S.mdrafts).length) { setStatus('', '다시 연결 중'); G.login({ silent: true }); return; }
+    showLogin(msg);
+  }
+
   async function start() {
     bind();
     if (/여기에_/.test(C.CLIENT_ID)) {
@@ -1037,7 +1043,8 @@
       return;
     }
     try { G.takeTokenFromUrl(); } catch (e) { showLogin(e.message); return; }
-    if (!G.token()) { showLogin(); return; }
+    if (!G.token()) { relogin(); return; }
+    G.rememberUser();
     $('#login').hidden = true; $('#app').hidden = false;
     S.today = dateKey(new Date());
     S.selDate = S.today;
