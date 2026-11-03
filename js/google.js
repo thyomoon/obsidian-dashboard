@@ -245,7 +245,9 @@
         return [];
       }
     }));
-    return [].concat(...all).sort((a, b) => (a.start < b.start ? -1 : 1));
+    // 캘린더마다 시간대 표기(-08:00 · Z 등)가 달라 글자로 비교하면 순서가 틀린다 — 실제 시각으로, 종일 일정은 먼저.
+    const at = (e) => (e.allDay ? -Infinity : Date.parse(e.start));
+    return [].concat(...all).sort((a, b) => at(a) - at(b) || (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
   }
 
   window.G = { login, canSilent, rememberUser, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, findPractice, meta, readText, writeText, createLog, createMeeting, events };
