@@ -329,7 +329,7 @@
 
   // ---------- 미팅 노트 ----------
   // 만들기: 파일 이름은 만든 시각(YYYY-MM-DD HHmm_주제), 실제 회의 시각은 meeting_at(작업 규칙 23).
-  const MEET_BEFORE = { Summary: ['Takeaways', 'Next Steps'], Takeaways: ['Next Steps'] };
+  const MEET_BEFORE = { 'Meeting Prep': ['Summary', 'Takeaways', 'Next Steps'], Summary: ['Takeaways', 'Next Steps'], Takeaways: ['Next Steps'] };
   const fileSafe = (s) => s.replace(/[\\/:*?"<>|#^[\]]/g, ' ').replace(/\s+/g, ' ').trim();
   const wiki = (n) => '"[[' + n.replace(/"/g, '') + ']]"';
   const names = (v) => v.split(/[,，]/).map((x) => x.replace(/\[\[|\]\]/g, '').trim()).filter(Boolean);
@@ -364,7 +364,7 @@
     } catch (e) { fail(e); }
   }
 
-  // 미팅 노트 칸(속성 · Summary · Takeaways): 쓰다가 1.2초 멈추면 저장. key = 파일 id|fm 또는 sec|칸 이름
+  // 미팅 노트 칸(속성 · Meeting Prep · Summary · Takeaways): 쓰다가 1.2초 멈추면 저장. key = 파일 id|fm 또는 sec|칸 이름
   const mtimers = {};
   function onMeetField(key, value) {
     S.mdrafts[key] = value;
@@ -680,7 +680,7 @@
     return out;
   }
 
-  // 고치기: 속성 · Summary · Takeaways는 바로 고치고, Next Steps는 체크 · 고치기 · 지우기 · 더하기.
+  // 고치기: 속성 · Meeting Prep · Summary · Takeaways는 바로 고치고, Next Steps는 체크 · 고치기 · 지우기 · 더하기.
   // 그 밖의 칸(예: 유의사항)은 읽기만 — 옵시디언에서 고친다.
   function meetingEditHtml(m) {
     const f = S.files[m.id] || {};
@@ -700,22 +700,22 @@
       input('attendees', '참석자', 'text', str(fm.attendees), '쉼표로 나눠서 — Kris Yu, Paul', true) +
       input('project', '프로젝트', 'text', str(fm.project), '쉼표로 — lease, Construction') +
       input('related', '관련', 'text', str(fm.related) || str(fm.asset), '쉼표로 — 300 Grant, Webster') + '</div>';
-    const textSec = (name) => {
-      const id = 'mt-' + name.toLowerCase();
-      return '<div class="sec"><label for="' + id + '"><h3>' + name + '</h3></label><textarea class="field short" id="' + id + '" data-mfield="' + h(m.id + '|sec|' + name) + '">' +
+    const textSec = (name, cls) => {
+      const id = 'mt-' + name.toLowerCase().replace(/\s+/g, '-');
+      return '<div class="sec"><label for="' + id + '"><h3>' + name + '</h3></label><textarea class="field ' + (cls || 'short') + '" id="' + id + '" data-mfield="' + h(m.id + '|sec|' + name) + '">' +
         h(val('sec', name, MD.getSectionText(f.text || '', name))) + '</textarea></div>';
     };
     const ns = secs.find((s) => s.name === 'Next Steps') || { name: 'Next Steps', isList: false, items: [] };
     const next = listSecHtml(ns, m).replace(/<\/div>$/, '') +
       '<form class="item-add" data-meet-add="' + h(m.id) + '"><label for="meet-add-input" class="sr-only">Next Step 추가</label>' +
       '<input class="field" id="meet-add-input" type="text" placeholder="할 일 추가" enterkeyhint="done"><button class="btn" type="submit">추가</button></form></div>';
-    const rest = secs.filter((s) => !['Summary', 'Takeaways', 'Next Steps'].includes(s.name)).map((s) => secHtml(s, m, false)).filter(Boolean).join('');
+    const rest = secs.filter((s) => !['Meeting Prep', 'Summary', 'Takeaways', 'Next Steps'].includes(s.name)).map((s) => secHtml(s, m, false)).filter(Boolean).join('');
     return '<div class="detail">' +
       '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button>' +
       '<button type="button" class="btn primary" data-meet-done>다 됐어요</button></span>' +
       '<div class="meta"><span id="save-label">' + h(S.saveLabel) + '</span><a href="' + h(obsidianUrl(m.title, C.MEETINGS_PATH)) + '">옵시디언에서 열기</a></div></div>' +
       '<div><div class="eyebrow">미팅 미닛' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
-      fields + textSec('Summary') + textSec('Takeaways') + next + rest + '</div>';
+      fields + textSec('Meeting Prep', 'tall') + textSec('Summary') + textSec('Takeaways') + next + rest + '</div>';
   }
 
   const KEEP_EMPTY = ['남은 일', '새로운 아이디어'];

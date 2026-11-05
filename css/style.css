@@ -296,6 +296,7 @@ a.chip { text-decoration: none; }
 .mf .field { color: var(--ink); }
 select.field { padding: 0 10px; }
 textarea.field.short { min-height: 120px; }
+textarea.field.tall { min-height: 260px; }
 .meet-new { display: flex; flex-direction: column; gap: 8px; }
 .meet-new .row { display: flex; gap: 8px; }
 .meet-new .row .field { flex: 1 1 0; min-width: 0; }
