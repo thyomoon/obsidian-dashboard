@@ -352,6 +352,16 @@
     return lines.join(eol);
   }
 
+  // 프론트매터 아래 본문 전체(프로젝트 노트 편집용). setBody는 프론트매터를 그대로 두고 본문만 바꾼다.
+  function getBody(text) {
+    const { lines } = splitLines(text);
+    return lines.slice(bodyStart(lines)).join('\n');
+  }
+  function setBody(text, value) {
+    const { lines, eol } = splitLines(text);
+    return lines.slice(0, bodyStart(lines)).concat(value.replace(/\r\n/g, '\n').split('\n')).join(eol);
+  }
+
   function touchModified(text, stamp) {
     const { lines, eol } = splitLines(text);
     if (lines[0] !== '---') return text;
@@ -432,6 +442,6 @@
     return { text: String(text).slice(0, m.index), md: m[1].padStart(2, '0') + '/' + m[2].padStart(2, '0') };
   }
 
-  const api = { blocks, frontmatter, setFrontmatter, inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, touchModified, addAuthor, fillTemplate, display, splitLines };
+  const api = { blocks, frontmatter, setFrontmatter, inlineHtml, splitOrigin, parseLog, getSectionText, toggleTask, editBullet, appendToSection, setSectionText, getBody, setBody, touchModified, addAuthor, fillTemplate, display, splitLines };
   global.MD = api;
 })(typeof window !== 'undefined' ? window : this);

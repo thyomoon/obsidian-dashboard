@@ -10,6 +10,8 @@ window.CONFIG = {
   // 미팅 노트 폴더 — 「Next Steps」 체크박스를 할 일에 함께 보여 주고, 체크는 그 노트에서 한다
   MEETINGS_PATH: ['2. Area of Responsibility', 'Meetings'],
   MEETING_TEMPLATE_PATH: ['Templates', 'Meeting Minutes.md'],
+  // 프로젝트 노트 — 하위 폴더까지의 md 전부를 「노트」 탭에 미팅 미닛과 함께 보여 주고, 본문은 대시보드에서도 고친다
+  PROJECT_PATH: ['1. Project'],
   // 연습 카드 — 상담에서 나온 연습과 기억할 말. 달력 밑(폰은 「오늘」 맨 아래)에 읽기 전용으로 보인다
   PRACTICE_PATH: ['2. Area of Responsibility', 'My Think', '3. 연습 카드', '연습 카드.md'],
 

@@ -252,7 +252,7 @@ button.meet-row { border: 0; font: inherit; text-align: left; cursor: pointer; w
   body[data-tab="home"] .grid [data-tab="home"],
   body[data-tab="log"] .grid [data-tab="log"],
   body[data-tab="cal"] .grid [data-tab="cal"],
-  body[data-tab="meet"] .grid [data-tab="meet"] { display: block; }
+  body[data-tab="notes"] .grid [data-tab="notes"] { display: block; }
   body[data-tab="home"] #events { order: -1; }
   body[data-tab="home"] #practice { order: 9; }
   body[data-tab="home"] #practice[hidden] { display: none; }
@@ -297,6 +297,7 @@ a.chip { text-decoration: none; }
 select.field { padding: 0 10px; }
 textarea.field.short { min-height: 120px; }
 textarea.field.tall { min-height: 260px; }
+textarea.field.note-body { min-height: 60vh; font-family: var(--mono); font-size: 13px; line-height: 1.6; }
 .meet-new { display: flex; flex-direction: column; gap: 8px; }
 .meet-new .row { display: flex; gap: 8px; }
 .meet-new .row .field { flex: 1 1 0; min-width: 0; }
@@ -367,6 +368,7 @@ mark { background: color-mix(in srgb, #F5D04A 55%, transparent); color: inherit;
 .log-meet .mt { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--idea-soft-ink); font-weight: 500; }
 .log-meet > svg { flex: none; color: var(--muted); width: 14px; height: 14px; }
 @media (max-width: 760px) {
+  #notes .mlist { max-height: none; }
   .log-meet { padding-left: 40px; }
   .log-meet::before { left: 14px; width: 18px; }
   .log-meet .mt { white-space: normal; }

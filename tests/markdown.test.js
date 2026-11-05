@@ -38,6 +38,13 @@ ok(MD.frontmatter(fmx).status === '완료' && /status: 완료\n---/.test(fmx), '
 fmx = MD.setFrontmatter(fmx, 'asset', '');
 ok(/^asset: $/m.test(fmx) && /## Summary/.test(fmx), '빈 값 · 본문은 그대로');
 
+// 프로젝트 노트 본문
+const note = '---\ntype: note\nmodified: 2026-11-03T17:57\n---\n\n# 제목\n- 줄\n';
+ok(MD.getBody(note) === '\n# 제목\n- 줄\n' && MD.setBody(note, MD.getBody(note)) === note, '본문을 읽고 그대로 쓰면 파일이 같다');
+ok(MD.setBody(note, '# 새 본문') === '---\ntype: note\nmodified: 2026-11-03T17:57\n---\n# 새 본문', '본문만 바꾸고 프론트매터는 그대로');
+ok(MD.setBody('---\r\na: 1\r\n---\r\n본문', '첫\n둘') === '---\r\na: 1\r\n---\r\n첫\r\n둘', 'CRLF 파일은 CRLF로');
+ok(MD.getBody('프론트매터 없음\n') === '프론트매터 없음\n', '프론트매터가 없으면 전체가 본문');
+
 // 읽기용 줄 목록
 const bl = MD.blocks('---\ntype: meeting\n---\n<!-- 안내 -->\n# 1부\n## Summary\n### 배경\n* 첫째\n  * 둘째\n글 한 줄\n- [ ] 할 일\n- [x] 끝\n');
 ok(bl.filter((b) => b.kind !== 'blank').map((b) => b.kind + (b.level || '')).join() === 'h1,h2,h3,bullet,bullet,p,task,task', '제목 · 불릿 · 글 · 체크박스를 나눈다(주석 · 프론트매터 빼고)');

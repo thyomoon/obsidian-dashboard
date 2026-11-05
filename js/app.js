@@ -17,12 +17,14 @@
     today: '', folders: null,
     logs: [],          // [{id, name, date, modifiedTime}] 날짜 내림차순
     meetings: [],      // [{id, name, title, date, modifiedTime, meeting: true}] Meetings 폴더의 미팅 미닛
+    notes: [],         // [{id, name, title, path, modifiedTime, project: true}] 1. Project 아래 노트
     files: {},         // id → {text, modifiedTime, parsed}
     showDone: false, kind: 'todo', tab: 'home',
     openDate: null, showList: false, selDate: null, month: null,
     todayEvents: null, monthEvents: null, eventsError: false,
     busy: new Set(), drafts: {}, base: {}, saveLabel: '', lastLoad: 0, editItem: null, editWhere: null,
-    openMeeting: null, meetFrom: null, meetFilter: 'open', meetEdit: false, newMeeting: null /* {date, where: 'cal' | 'events'} */, mdrafts: {}, mbase: {}
+    openMeeting: null, meetFrom: null, meetEdit: false, newMeeting: null /* {date, where: 'cal' | 'events'} */, mdrafts: {}, mbase: {},
+    openNote: null, noteEdit: false, noteFilter: 'all', ndrafts: {}, nbase: {}
   };
 
   // ---------- 날짜 (샌프란시스코 현지 시각) ----------
@@ -86,7 +88,7 @@
   }
   function putFile(id, text, modifiedTime) {
     S.files[id] = { text, modifiedTime, parsed: MD.parseLog(text), fm: MD.frontmatter(text) };
-    const l = S.logs.find((x) => x.id === id) || S.meetings.find((x) => x.id === id);
+    const l = S.logs.find((x) => x.id === id) || S.meetings.find((x) => x.id === id) || S.notes.find((x) => x.id === id);
     if (l) l.modifiedTime = modifiedTime;
   }
 
@@ -100,17 +102,21 @@
     }
     const logs = (await G.listLogs()).sort((a, b) => (a.date < b.date ? 1 : -1));
     const meetings = (await G.listMeetings()).sort((a, b) => (a.name < b.name ? 1 : -1));
+    const notes = await G.listProjectNotes();
     const cache = loadCache();
-    await Promise.all(logs.concat(meetings).map(async (l) => {
+    const all = logs.concat(meetings, notes);
+    await Promise.all(all.map(async (l) => {
       const have = S.files[l.id] || cache[l.id];
       if (have && have.modifiedTime === l.modifiedTime) { putFile(l.id, have.text, l.modifiedTime); return; }
       putFile(l.id, await G.readText(l.id), l.modifiedTime);
     }));
     S.logs = logs;
     S.meetings = meetings;
+    S.notes = notes;
     const pid = await G.findPractice(S.folders.vault);
     S.practice = pid ? await G.readText(pid) : null;
-    Object.keys(S.files).forEach((id) => { if (!logs.some((l) => l.id === id) && !meetings.some((m) => m.id === id)) delete S.files[id]; });
+    const keep = new Set(all.map((l) => l.id));
+    Object.keys(S.files).forEach((id) => { if (!keep.has(id)) delete S.files[id]; });
     saveCache();
     S.lastLoad = Date.now();
     setStatus('ok', '구글 드라이브 연결됨');
@@ -323,6 +329,7 @@
   function flushFields() {
     Object.keys(timers).forEach((n) => { clearTimeout(timers[n]); if (n in S.drafts) saveField(n); });
     Object.keys(mtimers).forEach(saveMeetField);
+    Object.keys(ntimers).forEach(saveNoteField);
     return saving;
   }
   function setSave(t) { S.saveLabel = t; const el = $('#save-label'); if (el) el.textContent = t; }
@@ -349,7 +356,7 @@
     saveCache();
     S.newMeeting = null;
     toast('미팅 미닛을 만들었어요.');
-    renderEvents(); renderCalendar(); renderMeetings();
+    renderEvents(); renderCalendar(); renderNotes();
     openMeeting(f.id);
   }
 
@@ -407,20 +414,63 @@
     if (kind === 'sec') S.mbase[key] = MD.getSectionText(next, name);
     if (S.mdrafts[key] === value) delete S.mdrafts[key];
     setSave('저장됨 · ' + timeHM(new Date()));
-    renderTodos(); renderCalendar(); renderMeetings();
+    renderTodos(); renderCalendar(); renderNotes();
   }
 
+  // ---------- 프로젝트 노트 ----------
+  // 본문 전체를 한 칸으로 고친다: 쓰다가 1.2초 멈추면 저장. 프론트매터는 modified · author만 바뀐다(속성은 옵시디언에서).
+  const ntimers = {};
+  function onNoteField(id, value) {
+    S.ndrafts[id] = value;
+    setSave('입력 중');
+    clearTimeout(ntimers[id]);
+    ntimers[id] = setTimeout(() => saveNoteField(id), 1200);
+  }
+  function saveNoteField(id) {
+    clearTimeout(ntimers[id]); delete ntimers[id];
+    saving = saving.then(() => doSaveNoteField(id)).catch(fail);
+    return saving;
+  }
+  async function doSaveNoteField(id) {
+    if (!(id in S.ndrafts)) return;
+    const value = S.ndrafts[id];
+    setSave('저장 중…');
+    const fresh = await G.readText(id);
+    const remote = MD.getBody(fresh);
+    if (remote !== S.nbase[id] && remote !== value) {
+      setSave('저장 안 함');
+      toast('이 노트가 다른 곳에서 바뀌었어요. 덮어쓰지 않았어요 — 쓴 내용을 복사해 두고 새로고침해 주세요.');
+      return;
+    }
+    const next = MD.addAuthor(MD.touchModified(MD.setBody(fresh, value), stamp()), 'Taylor');
+    const res = await G.writeText(id, next);
+    putFile(id, next, res.modifiedTime);
+    saveCache();
+    S.nbase[id] = MD.getBody(next);
+    if (S.ndrafts[id] === value) delete S.ndrafts[id];
+    setSave('저장됨 · ' + timeHM(new Date()));
+    renderNotes();
+  }
+
+  // 미팅 미닛 · 프로젝트 노트는 로그 칸에 한 장씩 열린다. 닫으면 연 탭으로 돌아간다.
   function openMeeting(id) {
     flushFields();
-    if (!S.openMeeting) S.meetFrom = S.tab;
-    S.openMeeting = id; S.meetEdit = false; S.editItem = null; S.saveLabel = ''; S.tab = 'log';
+    if (!S.openMeeting && !S.openNote) S.meetFrom = S.tab;
+    S.openMeeting = id; S.openNote = null; S.meetEdit = false; S.editItem = null; S.saveLabel = ''; S.tab = 'log';
+    renderHeader(); renderLogs();
+    $('#logs').scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+  function openNote(id) {
+    flushFields();
+    if (!S.openMeeting && !S.openNote) S.meetFrom = S.tab;
+    S.openNote = id; S.openMeeting = null; S.noteEdit = false; S.editItem = null; S.saveLabel = ''; S.tab = 'log';
     renderHeader(); renderLogs();
     $('#logs').scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
   function closeMeeting() {
     flushFields();
     S.tab = S.meetFrom || 'log';
-    S.openMeeting = null; S.meetFrom = null; S.editItem = null; S.saveLabel = '';
+    S.openMeeting = null; S.openNote = null; S.meetFrom = null; S.editItem = null; S.saveLabel = '';
     renderHeader(); renderLogs();
   }
 
@@ -450,6 +500,13 @@
       who: Array.isArray(fm.attendees) ? fm.attendees : [],
       open: p ? p.tasks.filter((t) => !t.done).length : 0
     };
+  }
+  // 프로젝트 노트의 날짜는 created가 먼저, 없으면 드라이브에서 고친 날짜.
+  function noteInfo(n) {
+    const fm = (S.files[n.id] && S.files[n.id].fm) || {};
+    const one = (v) => (Array.isArray(v) ? v[0] || '' : v || '');
+    const c = one(fm.created).match(/^\d{4}-\d{2}-\d{2}/);
+    return { date: c ? c[0] : dateKey(new Date(n.modifiedTime)), type: one(fm.type), status: one(fm.status), desc: one(fm.description) };
   }
   const meetingsOn = (date) => S.meetings.map((m) => Object.assign({ m }, meetingInfo(m))).filter((x) => x.date === date)
     .sort((a, b) => (a.time < b.time ? -1 : 1));
@@ -566,6 +623,11 @@
   // 그 아래에 그날 미팅 미닛(회의 시각순). 미팅만 있는 날도 날짜 줄이 생긴다.
   function renderLogs() {
     const el = $('#logs');
+    if (S.openNote) {
+      const n = S.notes.find((x) => x.id === S.openNote);
+      if (n) { el.innerHTML = S.noteEdit ? noteEditHtml(n) : noteReadHtml(n); return; }
+      S.openNote = null;
+    }
     if (S.openMeeting) {
       const m = S.meetings.find((x) => x.id === S.openMeeting);
       if (m) { el.innerHTML = meetingHtml(m); return; }
@@ -639,6 +701,37 @@
       '<div><div class="eyebrow">미팅 미닛' + (info.date ? ' · ' + h(kor(info.date)) : '') + '</div><h2 class="big" id="logs-h">' + h(info.topic) + '</h2></div>' +
       (facts ? '<div class="facts">' + facts + '</div>' : '') +
       '<div class="sec mbody">' + (body || '<div class="hint">아직 내용이 없어요. 「편집」을 눌러 써 주세요.</div>') + '</div></div>';
+  }
+
+  // 프로젝트 노트 한 장. 읽기는 미팅 미닛과 같은 그리기, 「편집」은 본문 전체를 마크다운 그대로 한 칸에서.
+  function noteTop(n, edit) {
+    return '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button>' +
+      (edit ? '<button type="button" class="btn primary" data-note-done>다 됐어요</button>' : '<button type="button" class="btn" data-note-edit>' + ICON.edit + '편집</button>') + '</span>' +
+      '<div class="meta">' + (edit ? '<span id="save-label">' + h(S.saveLabel) + '</span>' : '') +
+      '<a href="' + h(obsidianUrl(n.title, C.PROJECT_PATH.concat(n.path))) + '">옵시디언에서 열기</a></div></div>' +
+      '<div><div class="eyebrow">' + h(C.PROJECT_PATH.concat(n.path).join(' / ')) + '</div><h2 class="big" id="logs-h">' + h(n.title) + '</h2></div>';
+  }
+
+  function noteReadHtml(n) {
+    const f = S.files[n.id] || {};
+    const fm = f.fm || {};
+    const x = noteInfo(n);
+    const str = (v) => (Array.isArray(v) ? v.join(' · ') : v || '');
+    const facts = [['종류', x.type], ['상태', x.status], ['만든 시각', str(fm.created).replace('T', ' ')], ['고친 시각', str(fm.modified).replace('T', ' ')], ['쓴 사람', str(fm.author)]]
+      .filter((y) => y[1]).map((y) => '<span><i>' + y[0] + '</i>' + h(y[1]) + '</span>').join('');
+    const body = blocksHtml(MD.blocks(f.text || ''), n);
+    return '<div class="detail meet-read">' + noteTop(n, false) +
+      (x.desc ? '<div class="hint">' + h(x.desc) + '</div>' : '') +
+      (facts ? '<div class="facts">' + facts + '</div>' : '') +
+      '<div class="sec mbody">' + (body || '<div class="hint">아직 내용이 없어요. 「편집」을 눌러 써 주세요.</div>') + '</div></div>';
+  }
+
+  function noteEditHtml(n) {
+    const v = n.id in S.ndrafts ? S.ndrafts[n.id] : S.nbase[n.id];
+    return '<div class="detail">' + noteTop(n, true) +
+      '<div class="sec"><label for="note-body"><h3>본문</h3></label>' +
+      '<textarea class="field note-body" id="note-body" data-nfield="' + h(n.id) + '">' + h(v) + '</textarea>' +
+      '<div class="hint">마크다운 그대로 고쳐요. 속성(프론트매터)은 옵시디언에서 고쳐요.</div></div></div>';
   }
 
   // 영역: 주간 검토의 영역 태그와 같은 목록. 목록에 없는 값이 이미 있으면 그대로 보여 준다.
@@ -848,32 +941,34 @@
       '<div class="row"><button class="btn primary" type="submit">만들기</button><button class="btn" type="button" data-meet-cancel>취소</button></div></form>';
   }
 
-  // 미팅 미닛 목록: 회의 날짜 · 시각 내림차순. 상태 칸은 쓰지 않고, 안 끝낸 Next Steps가 있으면 「할 일 남음」.
-  function renderMeetings() {
-    const el = $('#meetings');
+  // 노트 목록: 미팅 미닛과 프로젝트 노트를 날짜 내림차순 한 목록으로. 미팅은 회의 날짜, 프로젝트 노트는 created.
+  function renderNotes() {
+    const el = $('#notes');
     if (!el) return;
-    if (!S.folders || !S.folders.meetings) { el.innerHTML = ''; return; }
-    const all = S.meetings.map((m) => {
+    const one = (v) => (Array.isArray(v) ? v[0] || '' : v || '');
+    const meets = S.meetings.map((m) => {
       const fm = (S.files[m.id] && S.files[m.id].fm) || {};
-      const one = (v) => (Array.isArray(v) ? v[0] || '' : v || '');
-      return Object.assign({ m, area: one(fm.area), tag: one(fm.project) || one(fm.related) || one(fm.asset) }, meetingInfo(m));
-    }).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
-    const open = all.filter((x) => x.open > 0);
-    const list = S.meetFilter === 'all' ? all : open;
+      const x = meetingInfo(m);
+      const tag = one(fm.project) || one(fm.related) || one(fm.asset);
+      return { id: m.id, kind: 'meet', date: x.date, time: x.time, title: x.topic, sub: x.who.join(' · '), tag, badge: x.open ? '할 일 ' + x.open : '' };
+    });
+    const notes = S.notes.map((n) => {
+      const x = noteInfo(n);
+      return { id: n.id, kind: 'note', date: x.date, time: '', title: n.title, sub: n.path.join(' / '), tag: '', badge: x.status };
+    });
+    const all = meets.concat(notes).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
+    const list = S.noteFilter === 'all' ? all : all.filter((x) => x.kind === S.noteFilter);
     const rows = list.map((x) =>
-      '<button type="button" class="mrow" data-meeting="' + h(x.m.id) + '">' +
+      '<button type="button" class="mrow" data-' + (x.kind === 'meet' ? 'meeting' : 'note') + '="' + h(x.id) + '">' +
       '<span class="when"><b>' + (x.date ? md(x.date) : '--/--') + '</b><span>' + (x.time || '') + '</span></span>' +
-      '<span class="body"><b>' + h(x.topic) + '</b>' +
-      '<small>' + (x.area ? '<em class="area">' + h(x.area) + '</em>' : '') + h(x.who.join(' · ')) + (x.who.length && x.tag ? ' · ' : '') + (x.tag ? '<i>' + h(x.tag) + '</i>' : '') + '</small></span>' +
-      '<span class="badges">' + (x.open ? '<span class="badge">할 일 ' + x.open + '</span>' : '<span class="badge zero">끝남</span>') + '</span>' +
+      '<span class="body"><b>' + h(x.title) + '</b>' +
+      '<small><em class="area">' + (x.kind === 'meet' ? '미팅' : '프로젝트') + '</em>' + h(x.sub) + (x.sub && x.tag ? ' · ' : '') + (x.tag ? '<i>' + h(x.tag) + '</i>' : '') + '</small></span>' +
+      (x.badge ? '<span class="badges"><span class="badge">' + h(x.badge) + '</span></span>' : '') +
       ICON.right + '</button>').join('');
-    el.innerHTML = '<div class="card-head"><h2 id="meet-h">미팅 미닛</h2>' +
-      '<div class="seg small" role="group" aria-label="미팅 보기">' +
-      '<button type="button" data-meet-filter="open" aria-pressed="' + (S.meetFilter !== 'all') + '">할 일 남음 ' + open.length + '</button>' +
-      '<button type="button" data-meet-filter="all" aria-pressed="' + (S.meetFilter === 'all') + '">전체 ' + all.length + '</button></div></div>' +
-      (S.newMeeting && S.newMeeting.where === 'meetings' ? '<div class="ev-new">' + newMeetingForm(S.today) + '</div>' :
-        '<button type="button" class="btn ev-add top" data-new-meeting="' + S.today + '">+ 새 미팅 미닛</button>') +
-      '<div class="mlist">' + (rows || '<div class="empty">' + (S.meetFilter === 'all' ? '미팅 미닛이 없어요.' : '할 일이 남은 미팅이 없어요.') + '</div>') + '</div>';
+    const seg = [['all', '전체', all.length], ['meet', '미팅', meets.length], ['note', '프로젝트', notes.length]]
+      .map((s) => '<button type="button" data-note-filter="' + s[0] + '" aria-pressed="' + (S.noteFilter === s[0]) + '">' + s[1] + ' ' + s[2] + '</button>').join('');
+    el.innerHTML = '<div class="card-head"><h2 id="notes-h">노트</h2><div class="seg small" role="group" aria-label="노트 보기">' + seg + '</div></div>' +
+      '<div class="mlist">' + (rows || '<div class="empty">노트가 없어요.</div>') + '</div>';
   }
 
   // 연습 카드: 「기억할 말」 중 하루 한 줄을 크게 보이고, 아래에 다른 칸을 목록으로. 읽기만 한다 — 고치는 건 옵시디언에서.
@@ -898,12 +993,12 @@
         : '<div class="psec"><h3>' + h(s.name) + '</h3>' + list(s) + '</div>').join('') + '</div>';
   }
 
-  function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); renderMeetings(); renderPractice(); }
+  function renderAll() { renderHeader(); renderTodos(); renderEvents(); renderLogs(); renderCalendar(); renderNotes(); renderPractice(); }
 
   // ---------- 조작 ----------
   function openLog(date) {
     flushFields();
-    S.openDate = date; S.showList = false; S.tab = 'log'; S.openMeeting = null;
+    S.openDate = date; S.showList = false; S.tab = 'log'; S.openMeeting = null; S.openNote = null;
     renderHeader(); renderLogs();
     $('#logs').scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
@@ -916,21 +1011,28 @@
       else if (t.dataset.done) { S.showDone = t.dataset.done === '1'; renderTodos(); }
       else if (t.dataset.open) openLog(t.dataset.open);
       else if (t.dataset.meeting) openMeeting(t.dataset.meeting);
+      else if (t.dataset.note) openNote(t.dataset.note);
       else if ('meetClose' in t.dataset) closeMeeting();
       else if ('meetEdit' in t.dataset) { S.meetEdit = true; renderLogs(); }
       else if ('meetDone' in t.dataset) { flushFields().then(() => { S.meetEdit = false; S.editItem = null; renderLogs(); }); }
+      else if ('noteEdit' in t.dataset) {
+        S.noteEdit = true; S.nbase[S.openNote] = MD.getBody(S.files[S.openNote].text);
+        renderLogs();
+        const ta = $('#note-body'); if (ta) ta.focus();
+      }
+      else if ('noteDone' in t.dataset) { flushFields().then(() => { S.noteEdit = false; renderLogs(); }); }
+      else if (t.dataset.noteFilter) { S.noteFilter = t.dataset.noteFilter; renderNotes(); }
       else if (t.dataset.newMeeting) {
-        S.newMeeting = { date: t.dataset.newMeeting, where: t.closest('#events') ? 'events' : t.closest('#meetings') ? 'meetings' : 'cal' };
-        renderEvents(); renderCalendar(); renderMeetings();
+        S.newMeeting = { date: t.dataset.newMeeting, where: t.closest('#events') ? 'events' : 'cal' };
+        renderEvents(); renderCalendar();
         const i = $('#meet-topic'); if (i) i.focus();
       }
-      else if ('meetCancel' in t.dataset) { S.newMeeting = null; renderEvents(); renderCalendar(); renderMeetings(); }
-      else if (t.dataset.meetFilter) { S.meetFilter = t.dataset.meetFilter; renderMeetings(); }
+      else if ('meetCancel' in t.dataset) { S.newMeeting = null; renderEvents(); renderCalendar(); }
       else if (t.dataset.eventNote) {
         const ev = eventsOn(S.todayEvents, S.today)[Number(t.dataset.eventNote)];
         if (ev) { t.disabled = true; createMeeting(S.today, ev.title, ev.allDay ? '' : timeHM(new Date(ev.start)), (ev.who || []).join(', ')).catch(fail).finally(() => { t.disabled = false; }); }
       }
-      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.openMeeting = null; S.showList = true; S.editItem = null; renderTodos(); renderLogs(); }
+      else if ('back' in t.dataset) { flushFields(); S.openDate = null; S.openMeeting = null; S.openNote = null; S.showList = true; S.editItem = null; renderTodos(); renderLogs(); }
       else if (t.dataset.itemEdit) {
         S.editItem = t.dataset.itemEdit; S.editWhere = t.closest('#todos') ? 'todos' : 'logs';
         renderTodos(); renderLogs();
@@ -945,7 +1047,7 @@
       }
       else if (t.dataset.tabBtn) {
         S.tab = t.dataset.tabBtn; flushFields();
-        if (S.openMeeting) { S.openMeeting = null; S.meetFrom = null; renderLogs(); }
+        if (S.openMeeting || S.openNote) { S.openMeeting = null; S.openNote = null; S.meetFrom = null; renderLogs(); }
         renderHeader(); window.scrollTo(0, 0);
       }
       else if (t.dataset.month) {
@@ -966,11 +1068,13 @@
       const f = e.target;
       if (f.dataset && f.dataset.field) onField(f.dataset.field, f.value);
       else if (f.dataset && f.dataset.mfield) onMeetField(f.dataset.mfield, f.value);
+      else if (f.dataset && f.dataset.nfield) onNoteField(f.dataset.nfield, f.value);
     });
     document.addEventListener('focusout', (e) => {
       const f = e.target;
       if (f.dataset && f.dataset.field && f.dataset.field in S.drafts) { clearTimeout(timers[f.dataset.field]); saveField(f.dataset.field); }
       if (f.dataset && f.dataset.mfield && f.dataset.mfield in S.mdrafts) saveMeetField(f.dataset.mfield);
+      if (f.dataset && f.dataset.nfield && f.dataset.nfield in S.ndrafts) saveNoteField(f.dataset.nfield);
     });
     document.addEventListener('submit', (e) => {
       const f = e.target;
@@ -1023,6 +1127,7 @@
     try {
       await loadVault();
       S.base = {}; S.mbase = {};
+      if (S.openNote && S.noteEdit && S.files[S.openNote] && !(S.openNote in S.ndrafts)) S.nbase[S.openNote] = MD.getBody(S.files[S.openNote].text);
       renderAll();
       await loadEvents();
       renderEvents(); renderCalendar();
@@ -1036,7 +1141,7 @@
 
   // 토큰이 끝났으면 먼저 조용히 다시 받아 본다. 쓰다 만 글이 있거나 방금 해 봤는데 안 됐으면 로그인 화면.
   function relogin(msg) {
-    if (G.canSilent() && !Object.keys(S.drafts).length && !Object.keys(S.mdrafts).length) { setStatus('', '다시 연결 중'); G.login({ silent: true }); return; }
+    if (G.canSilent() && !Object.keys(S.drafts).length && !Object.keys(S.mdrafts).length && !Object.keys(S.ndrafts).length) { setStatus('', '다시 연결 중'); G.login({ silent: true }); return; }
     showLogin(msg);
   }
 

@@ -1,5 +1,5 @@
 // 구글 로그인 · 드라이브 · 캘린더. 서버 없이 브라우저에서 바로 구글 API를 부른다.
-// 쓰기는 데일리 로그 · Meetings 폴더 안의 파일에만 허용한다(writable 목록에 없는 파일은 거절).
+// 쓰기는 데일리 로그 · Meetings · 1. Project 폴더 안의 파일에만 허용한다(writable 목록에 없는 파일은 거절).
 (function () {
   'use strict';
   const C = window.CONFIG;
@@ -121,11 +121,12 @@
   const writable = new Set();
   let logFolderId = null;
   let meetingFolderId = null;
+  let projectFolderId = null;
 
   async function findLogFolder() {
     const cached = store.get('od.folders');
-    if (cached && cached.client === C.CLIENT_ID && 'meetTemplate' in cached) {
-      logFolderId = cached.logs; meetingFolderId = cached.meetings; return cached;
+    if (cached && cached.client === C.CLIENT_ID && 'projects' in cached) {
+      logFolderId = cached.logs; meetingFolderId = cached.meetings; projectFolderId = cached.projects; return cached;
     }
     const vault = await childPath('root', C.VAULT_PATH, false);
     const logs = await childPath(vault, C.LOG_PATH, false);
@@ -137,9 +138,13 @@
     catch (e) { if (e instanceof AuthError) throw e; }
     try { meetTemplate = await childPath(vault, C.MEETING_TEMPLATE_PATH, true); }
     catch (e) { if (e instanceof AuthError) throw e; }
-    const f = { client: C.CLIENT_ID, vault, logs, template, meetings, meetTemplate };
+    // 1. Project 폴더도 없어도 된다 — 없으면 노트 탭에 미팅 미닛만 보인다.
+    let projects = null;
+    try { projects = await childPath(vault, C.PROJECT_PATH, false); }
+    catch (e) { if (e instanceof AuthError) throw e; }
+    const f = { client: C.CLIENT_ID, vault, logs, template, meetings, meetTemplate, projects };
     store.set('od.folders', f);
-    logFolderId = logs; meetingFolderId = meetings;
+    logFolderId = logs; meetingFolderId = meetings; projectFolderId = projects;
     return f;
   }
 
@@ -179,6 +184,29 @@
         const d = title.match(/^\d{4}-\d{2}-\d{2}/);
         return Object.assign(f, { title, date: d ? d[0] : '', meeting: true });
       });
+    out.forEach((f) => writable.add(f.id));
+    return out;
+  }
+
+  // 프로젝트 노트: 1. Project 아래 하위 폴더까지의 .md 전부(readme.md는 뺀다). path는 1. Project 아래 폴더 경로.
+  async function listProjectNotes() {
+    if (!projectFolderId) return [];
+    const out = [];
+    let level = [{ id: projectFolderId, path: [] }];
+    while (level.length) {
+      const next = [];
+      await Promise.all(level.map(async (d) => {
+        const files = await list("'" + esc(d.id) + "' in parents and trashed=false", 'id,name,mimeType,modifiedTime');
+        files.forEach((f) => {
+          const name = nfc(f.name);
+          if (f.mimeType === FOLDER) next.push({ id: f.id, path: d.path.concat(name) });
+          else if (/\.md$/i.test(name) && name.toLowerCase() !== 'readme.md') {
+            out.push({ id: f.id, name, title: name.replace(/\.md$/i, ''), path: d.path, modifiedTime: f.modifiedTime, project: true });
+          }
+        });
+      }));
+      level = next;
+    }
     out.forEach((f) => writable.add(f.id));
     return out;
   }
@@ -250,5 +278,5 @@
     return [].concat(...all).sort((a, b) => at(a) - at(b) || (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
   }
 
-  window.G = { login, canSilent, rememberUser, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, findPractice, meta, readText, writeText, createLog, createMeeting, events };
+  window.G = { login, canSilent, rememberUser, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, listProjectNotes, findPractice, meta, readText, writeText, createLog, createMeeting, events };
 })();

@@ -15,6 +15,7 @@ import json, sys, pathlib, unicodedata
 v = pathlib.Path(sys.argv[1])
 logs = sorted((v / '2. Area of Responsibility/My Think/0. 데일리 로그').glob('20*.md'))
 meets = sorted(p for p in (v / '2. Area of Responsibility/Meetings').glob('20*.md'))
+projects = sorted(p for p in (v / '1. Project').rglob('*.md') if p.name.lower() != 'readme.md')
 import datetime, zoneinfo
 today = datetime.datetime.now(zoneinfo.ZoneInfo('America/Los_Angeles')).strftime('%Y-%m-%d')
 # 미리보기 전용 예시 회의록 — 마크다운 문법이 어떻게 보이는지 확인용(볼트에는 없다)
@@ -85,6 +86,7 @@ data = {'template': (v / 'Templates/데일리 로그.md').read_text(encoding='ut
         'meetings': [{'name': today + ' 0900_예시 회의록 — 마크다운 미리보기.md', 'text': DEMO.replace('TODAY', today)}] +
                     [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in meets],
         'practice': next((p.read_text(encoding='utf-8') for p in [v / '2. Area of Responsibility/My Think/3. 연습 카드/연습 카드.md'] if p.exists()), None),
+        'projects': [{'name': unicodedata.normalize('NFC', p.name), 'path': [unicodedata.normalize('NFC', x) for x in p.relative_to(v / '1. Project').parts[:-1]], 'text': p.read_text(encoding='utf-8')} for p in projects],
         'logs': [{'name': unicodedata.normalize('NFC', p.name), 'text': p.read_text(encoding='utf-8')} for p in logs]}
 pathlib.Path(sys.argv[2]).write_text('window.FIXTURES = ' + json.dumps(data, ensure_ascii=False) + ';', encoding='utf-8')
 EOF
