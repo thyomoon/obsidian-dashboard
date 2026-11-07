@@ -17,7 +17,7 @@
     today: '', folders: null,
     logs: [],          // [{id, name, date, modifiedTime}] 날짜 내림차순
     meetings: [],      // [{id, name, title, date, modifiedTime, meeting: true}] Meetings 폴더의 미팅 미닛
-    notes: [],         // [{id, name, title, path, modifiedTime, project: true}] 1. Project 아래 노트
+    notes: [],         // [{id, name, title, kind: 'project' | 'research', base, path, modifiedTime}] 1. Project · 3. Resource/research 아래 노트
     files: {},         // id → {text, modifiedTime, parsed}
     showDone: false, kind: 'todo', tab: 'home',
     openDate: null, showList: false, selDate: null, month: null,
@@ -708,8 +708,8 @@
     return '<div class="detail-top"><span class="nav"><button type="button" class="btn" data-meet-close>' + ICON.left + '닫기</button>' +
       (edit ? '<button type="button" class="btn primary" data-note-done>다 됐어요</button>' : '<button type="button" class="btn" data-note-edit>' + ICON.edit + '편집</button>') + '</span>' +
       '<div class="meta">' + (edit ? '<span id="save-label">' + h(S.saveLabel) + '</span>' : '') +
-      '<a href="' + h(obsidianUrl(n.title, C.PROJECT_PATH.concat(n.path))) + '">옵시디언에서 열기</a></div></div>' +
-      '<div><div class="eyebrow">' + h(C.PROJECT_PATH.concat(n.path).join(' / ')) + '</div><h2 class="big" id="logs-h">' + h(n.title) + '</h2></div>';
+      '<a href="' + h(obsidianUrl(n.title, n.base.concat(n.path))) + '">옵시디언에서 열기</a></div></div>' +
+      '<div><div class="eyebrow">' + h(n.base.concat(n.path).join(' / ')) + '</div><h2 class="big" id="logs-h">' + h(n.title) + '</h2></div>';
   }
 
   function noteReadHtml(n) {
@@ -941,7 +941,8 @@
       '<div class="row"><button class="btn primary" type="submit">만들기</button><button class="btn" type="button" data-meet-cancel>취소</button></div></form>';
   }
 
-  // 노트 목록: 미팅 미닛과 프로젝트 노트를 날짜 내림차순 한 목록으로. 미팅은 회의 날짜, 프로젝트 노트는 created.
+  // 노트 목록: 미팅 미닛 · 프로젝트 노트 · 리서치 노트를 날짜 내림차순 한 목록으로. 미팅은 회의 날짜, 나머지는 created.
+  const KIND = { meet: '미팅', project: '프로젝트', research: '리서치' };
   function renderNotes() {
     const el = $('#notes');
     if (!el) return;
@@ -954,7 +955,7 @@
     });
     const notes = S.notes.map((n) => {
       const x = noteInfo(n);
-      return { id: n.id, kind: 'note', date: x.date, time: '', title: n.title, sub: n.path.join(' / '), tag: '', badge: x.status };
+      return { id: n.id, kind: n.kind, date: x.date, time: '', title: n.title, sub: n.path.join(' / '), tag: '', badge: x.status };
     });
     const all = meets.concat(notes).sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : -1));
     const list = S.noteFilter === 'all' ? all : all.filter((x) => x.kind === S.noteFilter);
@@ -962,10 +963,11 @@
       '<button type="button" class="mrow" data-' + (x.kind === 'meet' ? 'meeting' : 'note') + '="' + h(x.id) + '">' +
       '<span class="when"><b>' + (x.date ? md(x.date) : '--/--') + '</b><span>' + (x.time || '') + '</span></span>' +
       '<span class="body"><b>' + h(x.title) + '</b>' +
-      '<small><em class="area">' + (x.kind === 'meet' ? '미팅' : '프로젝트') + '</em>' + h(x.sub) + (x.sub && x.tag ? ' · ' : '') + (x.tag ? '<i>' + h(x.tag) + '</i>' : '') + '</small></span>' +
+      '<small><em class="area">' + KIND[x.kind] + '</em>' + h(x.sub) + (x.sub && x.tag ? ' · ' : '') + (x.tag ? '<i>' + h(x.tag) + '</i>' : '') + '</small></span>' +
       (x.badge ? '<span class="badges"><span class="badge">' + h(x.badge) + '</span></span>' : '') +
       ICON.right + '</button>').join('');
-    const seg = [['all', '전체', all.length], ['meet', '미팅', meets.length], ['note', '프로젝트', notes.length]]
+    const count = (k) => all.filter((x) => x.kind === k).length;
+    const seg = [['all', '전체', all.length]].concat(Object.keys(KIND).map((k) => [k, KIND[k], count(k)]))
       .map((s) => '<button type="button" data-note-filter="' + s[0] + '" aria-pressed="' + (S.noteFilter === s[0]) + '">' + s[1] + ' ' + s[2] + '</button>').join('');
     el.innerHTML = '<div class="card-head"><h2 id="notes-h">노트</h2><div class="seg small" role="group" aria-label="노트 보기">' + seg + '</div></div>' +
       '<div class="mlist">' + (rows || '<div class="empty">노트가 없어요.</div>') + '</div>';

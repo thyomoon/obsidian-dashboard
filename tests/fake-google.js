@@ -7,7 +7,7 @@
   files.tpl = { name: '데일리 로그.md', text: window.FIXTURES.template, modifiedTime: '2026-01-01T00:00:00Z' };
   files.mtpl = { name: 'Meeting Minutes.md', text: window.FIXTURES.meetTemplate, modifiedTime: '2026-01-01T00:00:00Z' };
   (window.FIXTURES.meetings || []).forEach((f, i) => { files['meet' + i] = { name: f.name, text: f.text, modifiedTime: '2026-01-01T00:00:00Z', meeting: true }; });
-  (window.FIXTURES.projects || []).forEach((f, i) => { files['proj' + i] = { name: f.name, text: f.text, path: f.path, modifiedTime: '2026-01-01T00:00:00Z', project: true }; });
+  (window.FIXTURES.projects || []).forEach((f, i) => { files['proj' + i] = { name: f.name, text: f.text, kind: f.kind, base: f.base, path: f.path, modifiedTime: '2026-01-01T00:00:00Z', project: true }; });
   if (window.FIXTURES.practice) files.practice = { name: '연습 카드.md', text: window.FIXTURES.practice, modifiedTime: '2026-01-01T00:00:00Z' };
   const isLog = (id) => /^\d{4}-\d{2}-\d{2}\.md$/.test(files[id].name);
   class AuthError extends Error {}
@@ -27,7 +27,7 @@
       return { id, name: files[id].name, title, date: title.slice(0, 10), modifiedTime: files[id].modifiedTime, meeting: true };
     })),
     listProjectNotes: () => wait(Object.keys(files).filter((id) => files[id].project).map((id) => (
-      { id, name: files[id].name, title: files[id].name.replace(/\.md$/, ''), path: files[id].path, modifiedTime: files[id].modifiedTime, project: true }))),
+      { id, name: files[id].name, title: files[id].name.replace(/\.md$/, ''), kind: files[id].kind, base: files[id].base, path: files[id].path, modifiedTime: files[id].modifiedTime }))),
     createMeeting(name, text) { const id = 'm' + Date.now(); files[id] = { name, text, modifiedTime: tick(), meeting: true }; window.CREATED = name; return wait({ id, name, modifiedTime: files[id].modifiedTime }); },
     createLog(name, text) { const id = 'new' + Date.now(); files[id] = { name, text, modifiedTime: tick() }; return wait({ id, name, modifiedTime: files[id].modifiedTime }); },
     events() {

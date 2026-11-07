@@ -1,5 +1,5 @@
 // 구글 로그인 · 드라이브 · 캘린더. 서버 없이 브라우저에서 바로 구글 API를 부른다.
-// 쓰기는 데일리 로그 · Meetings · 1. Project 폴더 안의 파일에만 허용한다(writable 목록에 없는 파일은 거절).
+// 쓰기는 데일리 로그 · Meetings · 1. Project · 3. Resource/research 폴더 안의 파일에만 허용한다(writable 목록에 없는 파일은 거절).
 (function () {
   'use strict';
   const C = window.CONFIG;
@@ -122,11 +122,12 @@
   let logFolderId = null;
   let meetingFolderId = null;
   let projectFolderId = null;
+  let researchFolderId = null;
 
   async function findLogFolder() {
     const cached = store.get('od.folders');
-    if (cached && cached.client === C.CLIENT_ID && 'projects' in cached) {
-      logFolderId = cached.logs; meetingFolderId = cached.meetings; projectFolderId = cached.projects; return cached;
+    if (cached && cached.client === C.CLIENT_ID && 'research' in cached) {
+      logFolderId = cached.logs; meetingFolderId = cached.meetings; projectFolderId = cached.projects; researchFolderId = cached.research; return cached;
     }
     const vault = await childPath('root', C.VAULT_PATH, false);
     const logs = await childPath(vault, C.LOG_PATH, false);
@@ -138,13 +139,16 @@
     catch (e) { if (e instanceof AuthError) throw e; }
     try { meetTemplate = await childPath(vault, C.MEETING_TEMPLATE_PATH, true); }
     catch (e) { if (e instanceof AuthError) throw e; }
-    // 1. Project 폴더도 없어도 된다 — 없으면 노트 탭에 미팅 미닛만 보인다.
+    // 1. Project · 3. Resource/research 폴더도 없어도 된다 — 없으면 노트 탭에서 그 칸만 빠진다.
     let projects = null;
+    let research = null;
     try { projects = await childPath(vault, C.PROJECT_PATH, false); }
     catch (e) { if (e instanceof AuthError) throw e; }
-    const f = { client: C.CLIENT_ID, vault, logs, template, meetings, meetTemplate, projects };
+    try { research = await childPath(vault, C.RESEARCH_PATH, false); }
+    catch (e) { if (e instanceof AuthError) throw e; }
+    const f = { client: C.CLIENT_ID, vault, logs, template, meetings, meetTemplate, projects, research };
     store.set('od.folders', f);
-    logFolderId = logs; meetingFolderId = meetings; projectFolderId = projects;
+    logFolderId = logs; meetingFolderId = meetings; projectFolderId = projects; researchFolderId = research;
     return f;
   }
 
@@ -188,11 +192,15 @@
     return out;
   }
 
-  // 프로젝트 노트: 1. Project 아래 하위 폴더까지의 .md 전부(readme.md는 뺀다). path는 1. Project 아래 폴더 경로.
+  // 프로젝트 · 리서치 노트: 1. Project와 3. Resource/research 아래 하위 폴더까지의 .md 전부(readme.md는 뺀다).
+  // kind는 'project' | 'research', base는 볼트 안의 시작 폴더, path는 그 아래 폴더 경로.
   async function listProjectNotes() {
-    if (!projectFolderId) return [];
+    const roots = [[projectFolderId, 'project', C.PROJECT_PATH], [researchFolderId, 'research', C.RESEARCH_PATH]];
+    return [].concat(...await Promise.all(roots.filter((r) => r[0]).map((r) => listNotesUnder(r[0], r[1], r[2]))));
+  }
+  async function listNotesUnder(rootId, kind, base) {
     const out = [];
-    let level = [{ id: projectFolderId, path: [] }];
+    let level = [{ id: rootId, path: [] }];
     while (level.length) {
       const next = [];
       await Promise.all(level.map(async (d) => {
@@ -201,7 +209,7 @@
           const name = nfc(f.name);
           if (f.mimeType === FOLDER) next.push({ id: f.id, path: d.path.concat(name) });
           else if (/\.md$/i.test(name) && name.toLowerCase() !== 'readme.md') {
-            out.push({ id: f.id, name, title: name.replace(/\.md$/i, ''), path: d.path, modifiedTime: f.modifiedTime, project: true });
+            out.push({ id: f.id, name, title: name.replace(/\.md$/i, ''), kind, base, path: d.path, modifiedTime: f.modifiedTime });
           }
         });
       }));
