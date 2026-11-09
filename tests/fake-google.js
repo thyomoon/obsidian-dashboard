@@ -11,10 +11,12 @@
   if (window.FIXTURES.practice) files.practice = { name: '연습 카드.md', text: window.FIXTURES.practice, modifiedTime: '2026-01-01T00:00:00Z' };
   const isLog = (id) => /^\d{4}-\d{2}-\d{2}\.md$/.test(files[id].name);
   class AuthError extends Error {}
+  class ScopeError extends AuthError {}
   const tick = () => new Date().toISOString();
   const wait = (v) => new Promise((r) => setTimeout(() => r(v), 30));
   window.G = {
     AuthError,
+    ScopeError,
     login() {}, canSilent: () => false, rememberUser() {}, logout() {}, takeTokenFromUrl() {}, token: () => 'demo', forgetFolders() {},
     findLogFolder: () => wait({ template: 'tpl', meetings: 'meet', meetTemplate: 'mtpl' }),
     findPractice: () => wait(window.FIXTURES.practice ? 'practice' : null),

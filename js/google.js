@@ -21,8 +21,10 @@
 
   // silent: 구글에 이미 로그인돼 있고 권한을 준 적이 있으면 화면 없이 새 토큰을 받아 온다(prompt=none).
   // 토큰은 1시간짜리라, 끝나면 이걸로 조용히 다시 받는다. 안 되면 구글이 #error로 돌려보낸다.
+  // consent: 권한 체크를 빼고 로그인했을 때, 권한 고르는 화면을 다시 띄운다(prompt=consent).
   function login(opts) {
     const silent = !!(opts && opts.silent);
+    const consent = !!(opts && opts.consent);
     const state = Math.random().toString(36).slice(2);
     try {
       sessionStorage.setItem('od.state', state);
@@ -37,6 +39,7 @@
       state
     });
     if (silent) q.set('prompt', 'none');
+    else if (consent) q.set('prompt', 'consent');
     const hint = store.get(HINT_KEY);
     if (hint) q.set('login_hint', hint);
     location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + q.toString();
@@ -59,13 +62,25 @@
   }
 
   // 로그인에서 돌아왔으면 주소의 #access_token을 꺼내 저장한다. 조용한 로그인이 안 됐으면(#error) 주소만 지운다.
+  // 권한(드라이브 · 캘린더) 중 체크를 뺀 것이 있으면 토큰을 저장하지 않고 ScopeError — 권한 화면부터 다시 받게.
   function takeTokenFromUrl() {
-    if (location.hash.includes('error=')) { history.replaceState(null, '', redirectUri()); return; }
+    if (location.hash.includes('error=')) {
+      const err = new URLSearchParams(location.hash.slice(1)).get('error');
+      history.replaceState(null, '', redirectUri());
+      if (err === 'access_denied') throw new ScopeError('구글 로그인에서 권한을 허용하지 않았어요. 다시 로그인하고 「허용」을 눌러 주세요.');
+      return;
+    }
     if (!location.hash.includes('access_token')) return;
     const h = new URLSearchParams(location.hash.slice(1));
     let expected = null;
     try { expected = sessionStorage.getItem('od.state'); } catch (e) { /* 무시 */ }
     if (expected && h.get('state') !== expected) throw new Error('로그인 응답이 맞지 않아요. 다시 로그인해 주세요.');
+    const granted = (h.get('scope') || '').split(' ');
+    const missing = C.SCOPES.filter((s) => !granted.includes(s));
+    if (h.get('scope') && missing.length) {
+      history.replaceState(null, '', redirectUri());
+      throw new ScopeError(scopeMsg(missing));
+    }
     store.set(TOKEN_KEY, { token: h.get('access_token'), exp: Date.now() + (Number(h.get('expires_in')) - 60) * 1000 });
     history.replaceState(null, '', redirectUri());
   }
@@ -78,6 +93,12 @@
   function logout() { store.del(TOKEN_KEY); }
 
   class AuthError extends Error {}
+  // 로그인은 됐지만 권한 체크를 뺀 경우. AuthError를 다시 던지는 곳에서 함께 올라간다. 조용한 로그인으로는 권한을 더 받을 수 없어서 로그인 화면으로 바로 간다.
+  class ScopeError extends AuthError {}
+  function scopeMsg(missing) {
+    const names = missing.map((s) => (/calendar/.test(s) ? '캘린더' : '구글 드라이브'));
+    return names.join(' · ') + ' 권한이 빠져 있어요. 다시 로그인하고 권한 화면에서 모든 칸을 체크해 주세요.';
+  }
 
   async function call(url, opts) {
     const t = token();
@@ -86,7 +107,12 @@
     if (res.status === 401) { logout(); throw new AuthError('로그인이 만료됐어요.'); }
     if (!res.ok) {
       let msg = res.status + '';
-      try { const j = await res.json(); msg += ' ' + ((j.error && j.error.message) || ''); } catch (e) { /* 무시 */ }
+      let j = null;
+      try { j = await res.json(); msg += ' ' + ((j.error && j.error.message) || ''); } catch (e) { /* 무시 */ }
+      if (res.status === 403 && /insufficient.*scope|scope.*insufficient/i.test(JSON.stringify(j || ''))) {
+        logout();
+        throw new ScopeError(scopeMsg([/calendar/.test(url) ? C.SCOPES.find((s) => /calendar/.test(s)) : C.SCOPES[0]]));
+      }
       throw new Error('구글 요청 실패: ' + msg);
     }
     return res;
@@ -286,5 +312,5 @@
     return [].concat(...all).sort((a, b) => at(a) - at(b) || (a.start < b.start ? -1 : a.start > b.start ? 1 : 0));
   }
 
-  window.G = { login, canSilent, rememberUser, logout, token, takeTokenFromUrl, AuthError, findLogFolder, forgetFolders, listLogs, listMeetings, listProjectNotes, findPractice, meta, readText, writeText, createLog, createMeeting, events };
+  window.G = { login, canSilent, rememberUser, logout, token, takeTokenFromUrl, AuthError, ScopeError, findLogFolder, forgetFolders, listLogs, listMeetings, listProjectNotes, findPractice, meta, readText, writeText, createLog, createMeeting, events };
 })();

@@ -67,6 +67,7 @@
   }
   function fail(err) {
     console.error(err);
+    if (err instanceof G.ScopeError) { showLogin(err.message, true); return; }
     if (err instanceof G.AuthError) { relogin(err.message); return; }
     toast(err.message || String(err));
     setStatus('err', '문제 생김');
@@ -1060,7 +1061,7 @@
       }
       else if (t.dataset.day) { S.selDate = t.dataset.day; renderCalendar(); }
       else if (t.dataset.action === 'refresh') refresh();
-      else if (t.dataset.action === 'logout') { flushFields().then(() => { G.logout(); showLogin('로그아웃했어요.'); }); }
+      else if (t.dataset.action === 'logout') { flushFields().then(() => { G.logout(); showLogin('로그아웃했어요. 다시 로그인하면 권한 화면이 나와요.', true); }); }
     });
     document.addEventListener('change', (e) => {
       const c = e.target;
@@ -1120,7 +1121,7 @@
       if (document.visibilityState === 'hidden') flushFields();
     });
     window.addEventListener('pagehide', flushFields);
-    $('#login-btn').addEventListener('click', () => G.login());
+    $('#login-btn').addEventListener('click', () => G.login({ consent: S.needConsent }));
   }
 
   async function refresh() {
@@ -1136,7 +1137,9 @@
     } catch (e) { fail(e); }
   }
 
-  function showLogin(msg) {
+  // consent: 권한이 빠져서 온 경우 — 로그인 버튼이 권한 고르는 화면을 다시 띄운다.
+  function showLogin(msg, consent) {
+    if (consent) S.needConsent = true;
     $('#app').hidden = true; $('#login').hidden = false;
     if (msg) $('#login-msg').textContent = msg;
   }
@@ -1154,7 +1157,7 @@
       $('#login-btn').disabled = true;
       return;
     }
-    try { G.takeTokenFromUrl(); } catch (e) { showLogin(e.message); return; }
+    try { G.takeTokenFromUrl(); } catch (e) { showLogin(e.message, e instanceof G.ScopeError); return; }
     if (!G.token()) { relogin(); return; }
     G.rememberUser();
     $('#login').hidden = true; $('#app').hidden = false;
